@@ -28,7 +28,8 @@ fetch('words.txt')
     startGame(); // Start after words load
   });
 let typed = "";
-let lavaHeight = canvas.height - 0;
+let initialLavaHeight = canvas.height - 1;
+let lavaHeight = initialLavaHeight;
 let scrollOffset = 0;
 
 const grassHeight = 60;
@@ -144,7 +145,7 @@ function initializePlatforms() {
 
   let baseY = canvas.height - 100; // or some height based on player starting position
 
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 20; i++) {
     generatePlatform(baseY);
     baseY = platforms[platforms.length - 1].y;
   }
@@ -215,9 +216,22 @@ for (let cloud of clouds) {
 }
 
 
-  // Grass
+ // Draw grass if still visible
+const grassY = canvas.height - grassHeight;
+if (grassY >= 0) {
   ctx.fillStyle = "#90EE90";
-  ctx.fillRect(0, canvas.height - 60, canvas.width, 60);
+  ctx.fillRect(0, grassY, canvas.width, grassHeight);
+
+  for (let bush of bushes) {
+    ctx.fillStyle = bush.zIndex ? "#006400" : "#004d00";
+    ctx.beginPath();
+    ctx.moveTo(bush.x, grassY);
+    ctx.lineTo(bush.x + bush.size / 2, grassY - bush.size);
+    ctx.lineTo(bush.x + bush.size, grassY);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
 
 // Static bushes
 for (let bush of bushes) {
@@ -323,20 +337,31 @@ for (let plat of platforms) {
     player.dashing = false;
   }
 
-  // Scroll if above mid-screen
-  if (player.y < canvas.height / 2) {
-    let delta = canvas.height / 2 - player.y;
-    player.y = canvas.height / 2;
-    scrollOffset += delta;
-    platforms.forEach(p => (p.y += delta));
-    lavaHeight += delta;
-    generatePlatform(player.y - 100);
-  }
+  // check if player is above the top threshold
+const topThreshold = canvas.height / 8;
+if (player.y < topThreshold) {
+  let delta = topThreshold - player.y;
+  player.y = topThreshold;
+  scrollOffset += delta;
 
-  // Game over if touching lava
-  if (player.y + player.height > lavaHeight) {
-    endGame();
-  }
+  platforms.forEach(p => (p.y += delta));
+  lavaHeight += delta;
+
+  // Generate platform high above player
+  for (let i = 0; i < 2; i++) {
+  generatePlatform(player.y - 150 - i * 60);
+}
+}
+
+ // Game over if touching lava
+if (player.y + player.height > lavaHeight) {
+  endGame();
+}
+
+// Lava always on screen
+if (lavaHeight > canvas.height - 1) {
+  lavaHeight = canvas.height - 1;
+}
 
   //dashing logic
  if (player.dashing) {
