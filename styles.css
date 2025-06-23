@@ -1,0 +1,39 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* prevent scrollbars */
+  height: 100%;
+  width: 100%;
+}
+
+#gameCanvas {
+  display: block; /* remove inline space */
+  position: fixed; /* fixed to viewport */
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #87CEFA; /* sky color fallback */
+}
+
+#start-menu,
+#game-over {
+  position: absolute;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  padding: 30px;
+  border-radius: 10px;
+}
+
+.hidden {
+  display: none;
+}
+
+button {
+  padding: 10px 20px;
+  font-size: 16px;
+  margin-top: 10px;
+  cursor: pointer;
+}
