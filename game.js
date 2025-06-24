@@ -2,8 +2,16 @@ const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
 function resizeCanvas() {
-  canvas.width = window.innerWidth;
+  // Set canvas logical size to 1/3 of window width (but full height)
+  const canvasWidth = window.innerWidth / 3;
+  canvas.width = canvasWidth;
   canvas.height = window.innerHeight;
+
+  // No need for manual positioning - CSS handles centering
+  // Remove any previous positioning styles
+  canvas.style.position = "";
+  canvas.style.left = "";
+  canvas.style.top = "";
 }
 
 window.addEventListener("resize", () => {
@@ -34,7 +42,7 @@ const grassHeight = 60;
 let showGround = true;
 
 const player = {
-  x: canvas.width / 2 - 10,
+  x: canvas.width / 2 - 10,  // Now properly centered in the narrower canvas
   y: canvas.height - grassHeight - 20,
   width: 20,
   height: 20,
@@ -204,7 +212,7 @@ function generatePlatform(baseY) {
   while (attempt < maxAttempts && !placed) {
     const word = words[Math.floor(Math.random() * words.length)];
     const width = 50 + word.length * 10;
-    const x = Math.random() * (canvas.width - width);
+    const x = Math.random() * (canvas.width - width); // Now uses correct canvas width
     const y = baseY - Math.random() * 60 - 40;
     
     const speed = Math.random() * 2 + 1;
