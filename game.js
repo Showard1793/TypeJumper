@@ -25,6 +25,10 @@ let currentLavaSpeed    = baseLavaSpeed;
 
 let gameRunning         = false;
 let gameOver            = false;
+let freezeGame = false;
+let fadingOut = false;
+let fadeOpacity = 0;
+let gameOverTimeout = null;   // if you kept the optional timeout handle
 let score               = 0;
 
 let platforms           = [];
@@ -42,8 +46,8 @@ const player = {
   x: 0,
   y: 0,
   width: 20,
-  height: 20,
-  color: "gray",
+  height: 40,
+  color: "beige",
   vy: 0,
   vx: 0,
   grounded: false,
@@ -81,10 +85,13 @@ document.addEventListener("keydown", e => {
 
   /* Jump & double‑jump */
   if (e.key === " ") {
-    if (player.jumpCount < player.maxJumps) {
-      player.vy = -13;
-      player.jumpCount++;
-    }
+   if (player.jumpCount < player.maxJumps) {
+  const BASE_JUMP = -13;                 // first jump height
+  player.vy = player.jumpCount === 0     // second jump is half as strong
+              ? BASE_JUMP                // ➊ first jump
+              : BASE_JUMP * 0.75;         // ➋ second jump (‑6.5)
+  player.jumpCount++;
+}
   }
 
   /* Backspace for typing */
@@ -145,25 +152,40 @@ document.addEventListener("keyup", e => {
 
 /* ───────── UI Screens ───────── */
 function showStartScreen() {
-  ctx.fillStyle = "#87CEEB";
+  // Dimmed dark overlay background like game over screen
+  ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle   = "#000";
-  ctx.font        = "bold 48px Arial";
-  ctx.textAlign   = "center";
-  ctx.fillText("Type Jumper", canvas.width / 2, canvas.height / 3);
+  // Text styling and alignment
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
 
+  // Title
+  ctx.font = "bold 80px Arial";
+  ctx.fillText("Type Jumper!", canvas.width / 2, canvas.height / 3);
+
+  // Controls details
   ctx.font = "24px Arial";
-  ctx.fillText("Controls:", canvas.width / 2, canvas.height / 2 - 30);
-  ctx.fillText("Arrow Keys: Move", canvas.width / 2, canvas.height / 2);
-  ctx.fillText("Space: Jump / Double‑Jump", canvas.width / 2, canvas.height / 2 + 30);
+  ctx.fillText("Arrow Keys: Move", canvas.width / 2, canvas.height / 2 - 10);
+  ctx.fillText("Space: Jump / Double-Jump", canvas.width / 2, canvas.height / 2 + 30
+  );
 
+  // Start prompt
   ctx.font = "bold 28px Arial";
-  ctx.fillText("Press Enter to Start!", canvas.width / 2, canvas.height / 2 + 120);
+  ctx.fillText("Press Enter to Start!", canvas.width / 2, canvas.height / 2 + 200);
 }
 
 /* ───────── Game Lifecycle ───────── */
 function startGame() {
+  /* ---- FULL RESET of transient flags ---- */
+  freezeGame      = false;
+  fadingOut       = false;
+  fadeOpacity     = 0;
+  if (gameOverTimeout) {      // cancel any leftover timeout
+    clearTimeout(gameOverTimeout);
+    gameOverTimeout = null;
+  }
+
   showCountdown        = true;
   countdownValue       = lavaGracePeriod / 1000;
   groundCoveredByLava  = false;
@@ -191,8 +213,9 @@ function startGame() {
   bushes = [];
   generateBushes();
 
-  animate();
+  animate();                       // kick off the main loop
 }
+
 
 function restartGame() { location.reload(); }
 
@@ -232,13 +255,26 @@ function generatePlatform(baseY) {
     const speed     = 1.5;
     const direction = Math.random() > 0.5 ? 1 : -1;
 
-    const cloudCircles = [
-      { x: width / 2, y: 0,         radius: width / 4 },
-      { x: width * 0.2, y: -10,     radius: 30 },
-      { x: width * 0.8, y: -5,      radius: 25 },
-      { x: width * 0.3, y: 5,       radius: 20 },
-      { x: width * 0.7, y: 8,       radius: 35 }
-    ];
+    // const cloudCircles = [
+    //   { x: width / 2, y: 0,         radius: width / 4 },
+    //   { x: width * 0.2, y: -10,     radius: 30 },
+    //   { x: width * 0.8, y: -5,      radius: 25 },
+    //   { x: width * 0.3, y: 5,       radius: 20 },
+    //   { x: width * 0.7, y: 8,       radius: 35 }
+    // ];
+
+  // Replace your fixed array with this one
+const cloudCircles = [
+  /*  ── top row ──  */
+  { x: width * 0.00, y: 8,  radius: 25 },
+  { x: width * 0.45, y: 6,  radius: 32 },
+  { x: width * 0.85, y: 8,  radius: 25 },
+
+  /*  ── bottom row ──  */
+  { x: width * 0.25, y: 18, radius: 28 },
+  { x: width * 0.65, y: 18, radius: 28 }
+];
+
 
     const overlaps = platforms.some(p =>
       Math.abs(p.y - y) < platformSpacing &&
@@ -260,6 +296,7 @@ function generatePlatform(baseY) {
 
 /* ───────── Player Physics & World Update ───────── */
 function updatePlayer() {
+  if (freezeGame) return;
   /* Horizontal movement */
   if (keysPressed["ArrowLeft"]) {
     player.vx = -player.normalSpeed;
@@ -297,7 +334,7 @@ function updatePlayer() {
   }
 
   /* Ground collision (when grass still visible) */
-  const groundY = canvas.height - grassHeight;
+  const groundY = canvas.height - grassHeight + scrollOffset;
   if (
     !groundCoveredByLava &&
     player.y + player.height >= groundY &&
@@ -342,7 +379,7 @@ function updatePlayer() {
   }
 
   // Mark the ground as permanently submerged once the lava reaches it
-  if (!groundCoveredByLava && lavaHeight <= canvas.height - grassHeight) {
+  if (!groundCoveredByLava && lavaHeight <= canvas.height - grassHeight + scrollOffset) {
     groundCoveredByLava = true;
   }
 
@@ -353,11 +390,17 @@ function updatePlayer() {
   }
 
   /* Game over on lava touch */
-  const LAVA_TOLERANCE = 1;         // pixels we’ll allow as “close enough”
-if (!gameOver &&
-    player.y + player.height >= lavaHeight - LAVA_TOLERANCE) {
-  endGame();
-    }}
+   const LAVA_TOLERANCE = 1;
+  if (!gameOver && player.y + player.height >= lavaHeight - LAVA_TOLERANCE) {
+    freezeGame = true;  // freeze immediately
+
+    // After 1 second start fading out
+    setTimeout(() => {
+      fadingOut = true;
+      fadeOpacity = 0;
+    }, 1000);
+  }
+}
 
 /* ───────── Drawing Helpers ───────── */
 function drawBackdrop() {
@@ -366,18 +409,18 @@ function drawBackdrop() {
 
   if (!groundCoveredByLava) {
     ctx.fillStyle = "#90EE90";
-    ctx.fillRect(0, canvas.height - grassHeight, canvas.width, grassHeight);
+    ctx.fillRect(0, canvas.height - grassHeight + scrollOffset, canvas.width, grassHeight);
   }
 
 if (showCountdown && countdownValue > 0) {
   const y = canvas.height - 40;
-  ctx.font = "bold 48px Arial";
+  ctx.font = "bold 40px Arial";
   ctx.textAlign = "center";
 
   // plain black until the last 3 seconds, then solid red
   ctx.fillStyle = countdownValue <= 3 ? "#ff0000" : "#000000";
 
-  ctx.fillText(`Lava rises in: ${countdownValue}`, canvas.width / 2, y);
+  ctx.fillText(`LAVA RISES IN: ${countdownValue}`, canvas.width / 2, y);
 }
 }
 
@@ -404,7 +447,7 @@ function drawPlatforms() {
     }
 
     /* Solid platform */
-    ctx.fillStyle = plat.active ? "#777" : "rgba(255,255,255,0)";
+    ctx.fillStyle = plat.active ? "#C49554" : "rgba(255,255,255,0.9)";
     ctx.fillRect(plat.x, plat.y, plat.width, plat.height);
 
     /* Word & typing feedback */
@@ -485,21 +528,21 @@ function endGame() {
 
 /* ───────── Main Loop ───────── */
 function animate() {
-  if (!gameRunning) return;        // unchanged
+  if (!gameRunning && !freezeGame && !fadingOut) return;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  updatePlayer();
+  // Only update game state if not frozen
+  if (!freezeGame) {
+    updatePlayer();
+  }
 
-  /* 🟢  NEW: stop right here if the last line in updatePlayer()
-               just called endGame() */
-  if (gameOver) return;
-
-  /* ‑‑ the rest of the drawing only happens while the game is alive ‑‑ */
+  // Draw game world
   drawBackdrop();
   drawPlatforms();
   drawPlayer();
 
+  // Draw lava
   ctx.fillStyle = "rgba(255,0,0,0.7)";
   ctx.fillRect(0, lavaHeight, canvas.width, canvas.height - lavaHeight);
 
@@ -511,6 +554,27 @@ function animate() {
 
   drawScore();
 
+  // ─── Fade-out overlay ───────────────────────
+  if (fadingOut) {
+    const FADE_FRAMES = 60 * 2; // 2 seconds at 60fps
+    fadeOpacity += 1 / FADE_FRAMES;
+
+    ctx.fillStyle = `rgba(0, 0, 0, ${Math.min(fadeOpacity, 1)})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (fadeOpacity >= 1) {
+      fadingOut = false;
+      endGame(); // Draw Game Over screen
+      return;    // Stop here to avoid redrawing over it
+    }
+
+    requestAnimationFrame(animate); // Keep fading
+    return;
+  }
+
+  // Continue animation loop
   requestAnimationFrame(animate);
 }
+
+
 
