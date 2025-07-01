@@ -1,41 +1,29 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
-
-window.addEventListener("resize", () => {
-  resizeCanvas();
-  // Optional: Recalculate positions or redraw if needed
-});
-
-// Initial sizing
-resizeCanvas();
-
+// Game state
+let gameStartTime = 0;
+let groundCoveredByLava = false;
+const lavaGracePeriod = 6000;//4 seconds
+const baseLavaSpeed = 0.05; // Original speed
+const fastLavaSpeed = 0.25;// Increased speed after grace period
 let gameRunning = false;
 let gameOver = false;
+let score = 0;
 let platforms = [];
 let bushes = [];
 let words = [];
-let clouds = [];
-
-fetch('words.txt')
-  .then(res => res.text())
-  .then(text => {
-    words = text.split('\n').filter(word => word.length >= 3 && word.length <= 10);
-    startGame(); // Start after words load
-  });
 let typed = "";
-let lavaHeight = canvas.height - 0;
+let lavaHeight = 0;
 let scrollOffset = 0;
+let highestPlayerPosition = 0;
+let currentTypingPlatform = null;
+let lastCorrectPlatformY = 0;
 
-const grassHeight = 60;
-
+// Player object
 const player = {
-  x: canvas.width / 2 - 10, // centered horizontally
-  y: canvas.height - grassHeight - 20, // on top of grass
+  x: 0,
+  y: 0,
   width: 20,
   height: 20,
   color: "gray",
@@ -43,24 +31,105 @@ const player = {
   vx: 0,
   grounded: false,
   dashing: false,
-  dashDuration: 150,  // dash lasts 150 ms
-  dashTimer: 0,       // counts down dash time
-  normalSpeed: 5,
-  vx: 0,
-  dashing: false,
   dashSpeed: 15,
   dashDuration: 200,
   dashTimer: 0,
-  dashDirection: 1 // 1 for right, -1 for left
+  dashDirection: 1,
+  normalSpeed: 5
 };
 
+// Canvas setup
+function resizeCanvas() {
+  const canvasWidth = window.innerWidth / 3;
+  canvas.width = canvasWidth;
+  canvas.height = window.innerHeight;
+}
 
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
 
+// Load words
+fetch('words.txt')
+  .then(res => res.text())
+  .then(text => {
+    words = text.split('\n').filter(word => word.length >= 3 && word.length <= 10);
+    showStartScreen();
+  });
+
+// Game constants
+const grassHeight = 60;
+const platformSpacing = 150;
+
+// Input handling
 const keysPressed = {};
-
 document.addEventListener("keydown", e => {
   keysPressed[e.key] = true;
-  // rest of keydown code...
+  
+  if (!gameRunning && e.key === "Enter" && words.length > 0) {
+    startGame();
+  }
+  
+  if (gameOver && e.key === "Enter") {
+    restartGame();
+  }
+
+  // Handle jumping and dashing
+  if (gameRunning && !gameOver) {
+    if (e.key === " ") {
+      if (player.grounded) {
+        player.vy = -13; // Jump
+      } else if (!player.dashing) {
+        player.dashing = true; // Dash
+        player.dashTimer = player.dashDuration;
+        player.vx = player.dashSpeed * player.dashDirection;
+      }
+    }
+
+    // Handle backspace
+    if (e.key === "Backspace") {
+      if (currentTypingPlatform) {
+        currentTypingPlatform.incorrectChar = null;
+        if (currentTypingPlatform.typedProgress.length > 0) {
+          currentTypingPlatform.typedProgress = 
+            currentTypingPlatform.typedProgress.slice(0, -1);
+        }
+      }
+      return;
+    }
+
+    // Handle typing letters
+    if (e.key.length === 1 && e.key.match(/[a-zA-Z]/)) {
+      const typedChar = e.key.toLowerCase();
+
+      // Find the next platform above player to type on
+      if (!currentTypingPlatform || 
+          currentTypingPlatform.active || 
+          currentTypingPlatform.y > player.y) {
+        currentTypingPlatform = platforms
+          .filter(p => !p.active && p.y < player.y)
+          .sort((a, b) => b.y - a.y)[0];
+      }
+
+      if (currentTypingPlatform) {
+        const expected = currentTypingPlatform.word[currentTypingPlatform.typedProgress.length].toLowerCase();
+
+        if (typedChar === expected) {
+          currentTypingPlatform.typedProgress += typedChar;
+          currentTypingPlatform.incorrectChar = null;
+
+          if (currentTypingPlatform.typedProgress.length === 
+              currentTypingPlatform.word.trim().length) {
+            currentTypingPlatform.active = true;
+            currentTypingPlatform.typedProgress = "";
+            score += currentTypingPlatform.word.length;
+            lastCorrectPlatformY = currentTypingPlatform.y;
+          }
+        } else if (currentTypingPlatform.typedProgress.length > 0) {
+          currentTypingPlatform.incorrectChar = typedChar;
+        }
+      }
+    }
+  }
 });
 
 document.addEventListener("keyup", e => {
@@ -70,171 +139,263 @@ document.addEventListener("keyup", e => {
   }
 });
 
-document.getElementById("start-btn").addEventListener("click", () => {
-  if (words.length > 0) {
-    document.getElementById("start-menu").classList.add("hidden");
-    canvas.classList.remove("hidden");
-    gameRunning = true;
-    initializePlatforms();
-    generateBushes();
-    animate();
-  } else {
-    alert("Words not loaded yet. Please wait a moment.");
-  }
-});
 
+
+// Start screen
+function showStartScreen() {
+  ctx.fillStyle = "#87CEEB";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  ctx.fillStyle = "#000";
+  ctx.font = "bold 48px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("Type Jumper", canvas.width/2, canvas.height/3);
+  
+  ctx.font = "24px Arial";
+  ctx.fillText("Controls:", canvas.width/2, canvas.height/2 - 30);
+  ctx.fillText("Arrow Keys: Move", canvas.width/2, canvas.height/2);
+  ctx.fillText("Space: Jump", canvas.width/2, canvas.height/2 + 30);
+  ctx.fillText("Space in Air: Dash", canvas.width/2, canvas.height/2 + 60);
+  
+  ctx.font = "bold 28px Arial";
+  ctx.fillText("Press Enter to Start!", canvas.width/2, canvas.height/2 + 120);
+}
 
 function startGame() {
-  document.getElementById("start-menu").classList.add("hidden");
-  canvas.classList.remove("hidden");
+  groundCoveredByLava = false;
   gameRunning = true;
+  gameOver = false;
+  score = 0;
+  scrollOffset = 0;
+  highestPlayerPosition = 0;
+  currentTypingPlatform = null;
+  lastCorrectPlatformY = 0;
+  gameStartTime = Date.now(); // Record when game started
+  
+  player.x = canvas.width / 2 - 10;
+  player.y = canvas.height - grassHeight - 20;
+  player.vy = 0;
+  player.vx = 0;
+  
+  lavaHeight = canvas.height - 1;
+  
+  platforms = [];
   initializePlatforms();
+  
+  bushes = [];
   generateBushes();
+  
   animate();
 }
 
-
 function generateBushes() {
-  bushes = [];
-  const bushCount = 20; // more bushes for full width
-
+  const bushCount = 20;
   for (let i = 0; i < bushCount; i++) {
     let size = Math.random() * 20 + 20;
-    let x = Math.random() * canvas.width;  // full width
+    let x = Math.random() * canvas.width;
     let zIndex = Math.random() > 0.5;
-    bushes.push({ x, size, zIndex });
+    bushes.push({ x, size, zIndex, y: canvas.height - grassHeight });
   }
 }
-
-function generateClouds() {
-  clouds = [];
-  const cloudCount = 20;
-
-  for (let i = 0; i < cloudCount; i++) {
-    const x = Math.random() * canvas.width;
-    const y = Math.random() * (canvas.height * 0.6); // sky area
-
-    // Each cloud will have 5 to 8 circles, with random offsets
-    const circleCount = Math.floor(Math.random() * 4) + 5;
-
-    let circles = [];
-    for (let j = 0; j < circleCount; j++) {
-      const offsetX = Math.random() * 40 - 20; // -20 to +20 px offset
-      const offsetY = Math.random() * 20 - 10; // -10 to +10 px offset
-      const radius = 15 + Math.random() * 10; // 15 to 25 radius
-
-      circles.push({ offsetX, offsetY, radius });
-    }
-
-    clouds.push({ x, y, circles });
-  }
-}
-
-
 
 function restartGame() {
   location.reload();
 }
 
 function initializePlatforms() {
-  platforms = [];
-
-  // First platform near bottom
-  
-
-  let baseY = canvas.height - 100; // or some height based on player starting position
-
-  for (let i = 0; i < 10; i++) {
+  let baseY = canvas.height - 100;
+  for (let i = 0; i < 1000; i++) {
     generatePlatform(baseY);
-    baseY = platforms[platforms.length - 1].y;
+    baseY = platforms[platforms.length - 1].y - (Math.random() * 60 + 40);
   }
 }
-
 
 function generatePlatform(baseY) {
   const maxAttempts = 10;
   let attempt = 0;
   let placed = false;
+  const fixedHeightDifference = 80; // Fixed vertical distance between platforms
+  const minHorizontalMargin = 20; // Minimum space from screen edges
 
   while (attempt < maxAttempts && !placed) {
     const word = words[Math.floor(Math.random() * words.length)];
-    const width = 50 + word.length * 10;
-    const x = Math.random() * (canvas.width - width);
-    const y = baseY - Math.random() * 40 - 40; // above baseY but within jump reach
+    const width =  word.length * 10;
+    
+    // Fixed vertical position (no randomness)
+    const y = baseY - fixedHeightDifference;
+    
+    // Horizontal position with edge padding
+    const x = minHorizontalMargin + 
+              Math.random() * (canvas.width - width - minHorizontalMargin * 2);
+    
+    // Consistent movement speed (optional - remove if you want varied speeds)
+    const speed = 1.5; // Fixed speed instead of random
+    const direction = Math.random() > 0.5 ? 1 : -1;
+    
+    // Consistent cloud appearance
+    const cloudCircles = [
+      // Main center circle
+      { x: width/2, y: 0, radius: width/4 },
+      // Consistent surrounding circles
+      { x: width * 0.2, y: -10, radius: 30 },
+      { x: width * 0.8, y: -5, radius: 25 },
+      { x: width * 0.3, y: 5, radius: 20 },
+      { x: width * 0.7, y: 8, radius: 35 }
+    ];
 
-    // Check for overlap
     const overlaps = platforms.some(p =>
-      y < p.y + p.height &&
-      y + 20 > p.y &&
-      x < p.x + p.width &&
-      x + width > p.x
-    );
+      Math.abs(p.y - y) < platformSpacing &&
+      ((x + width > p.x && x < p.x + p.width)
+    ));
 
     if (!overlaps) {
-      platforms.push({ x, y, width, height: 20, word, active: false, typedProgress: "" });
-
+      platforms.push({ 
+        x, y, width, height: 20, word,
+        active: false, typedProgress: "",
+        speed, direction, cloudCircles,
+        incorrectChar: null
+      });
       placed = true;
     }
-
     attempt++;
   }
-
- // Fallback if nothing placed
-if (!placed) {
-  platforms.push({
-  x: 50,
-  y: baseY - 100,
-  width: 100,
-  height: 20,
-  word: "jump",
-  active: false,
-  typedProgress: "" // MUST be here
-});
 }
 
-}
+function updatePlayer() {
+  // Handle horizontal movement
+  if (!player.dashing) {
+    if (keysPressed["ArrowLeft"]) {
+      player.vx = -player.normalSpeed;
+      player.dashDirection = -1;
+    } else if (keysPressed["ArrowRight"]) {
+      player.vx = player.normalSpeed;
+      player.dashDirection = 1;
+    } else if (!player.dashing) {
+      player.vx *= 0.9;
+      if (Math.abs(player.vx) < 0.1) player.vx = 0;
+    }
+  }
 
+  // Apply gravity
+  player.vy += 0.5;
+  player.y += player.vy;
+  player.x += player.vx;
+
+  // Clamp horizontal position
+  player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+
+  // Check for ground/platform collisions
+  player.grounded = false;
+  
+  // Platform collision
+  for (let plat of platforms) {
+    if (
+      plat.active &&
+      player.x + player.width > plat.x &&
+      player.x < plat.x + plat.width &&
+      player.y + player.height > plat.y &&
+      player.y + player.height <= plat.y + plat.height + 5 &&
+      player.vy >= 0
+    ) {
+      player.y = plat.y - player.height;
+      player.vy = 0;
+      player.grounded = true;
+      player.dashing = false;
+    }
+  }
+
+  // Check if lava has covered the ground
+  if (!groundCoveredByLava && lavaHeight <= canvas.height - grassHeight) {
+    groundCoveredByLava = true;
+  }
+
+  // Ground collision (only if not covered by lava)
+  const groundY = canvas.height - grassHeight;
+  if (!groundCoveredByLava && player.y + player.height >= groundY && player.y + player.height < lavaHeight) {
+    player.y = groundY - player.height;
+    player.vy = 0;
+    player.grounded = true;
+    player.dashing = false;
+  }
+
+  // Handle scrolling when player goes above threshold
+  const topThreshold = canvas.height / 4;
+  if (player.y < topThreshold) {
+    const delta = topThreshold - player.y;
+    scrollOffset += delta;
+    
+    // Move everything down
+    player.y = topThreshold;
+    platforms.forEach(p => p.y += delta);
+    bushes.forEach(b => b.y += delta);
+    lavaHeight += delta;
+  }
+
+  // Track highest position for score
+  if (player.y < highestPlayerPosition) {
+    highestPlayerPosition = player.y;
+  }
+
+  // Handle lava
+  const currentTime = Date.now();
+  const timeSinceStart = currentTime - gameStartTime;
+  
+  // Only rise lava after grace period
+  if (timeSinceStart > lavaGracePeriod) {
+    // Use faster lava speed after grace period
+    lavaHeight -= fastLavaSpeed; 
+  } else {
+    // Optional: You could add a visual countdown here
+  }
+
+  // Reset lava if it's too far below screen
+  if (lavaHeight > canvas.height) {
+    lavaHeight = canvas.height - 1;
+    platforms = platforms.filter(p => p.y < canvas.height * 2);
+  }
+
+  // Generate new platforms when needed
+  const lowestPlatform = Math.min(...platforms.map(p => p.y));
+  if (lowestPlatform > player.y + canvas.height) {
+    generatePlatform(player.y - platformSpacing);
+  }
+
+  // Game over if player hits lava
+  if (player.y + player.height > lavaHeight && !gameOver) {
+    endGame();
+  }
+
+  // Dashing logic
+  if (player.dashing) {
+    player.dashTimer -= 16.67;
+    if (player.dashTimer <= 0) {
+      player.dashing = false;
+      player.vx = player.normalSpeed * player.dashDirection;
+    }
+  }
+}
 
 function drawBackdrop() {
-  ctx.fillStyle = "#87CEFA"; // sky
+  // Draw sky background
+  ctx.fillStyle = "#87CEEB";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
- // Randomly scattered clouds above grass, anywhere in the sky area
-const cloudCount = 30; // more clouds for fullness
-
-// Draw clouds from stored positions
-ctx.fillStyle = "white";
-
-for (let cloud of clouds) {
-  ctx.beginPath();
-  for (let c of cloud.circles) {
-    ctx.moveTo(cloud.x + c.offsetX + c.radius, cloud.y + c.offsetY);
-    ctx.arc(cloud.x + c.offsetX, cloud.y + c.offsetY, c.radius, 0, Math.PI * 2);
+  // Only draw ground if not covered by lava
+  if (!groundCoveredByLava) {
+    ctx.fillStyle = "#90EE90";
+    ctx.fillRect(0, canvas.height - grassHeight, canvas.width, grassHeight);
   }
-  ctx.fill();
-}
 
-
-  // Grass
-  ctx.fillStyle = "#90EE90";
-  ctx.fillRect(0, canvas.height - 60, canvas.width, 60);
-
-// Static bushes
-for (let bush of bushes) {
-  if (bush.zIndex) ctx.fillStyle = "#006400";
-  else ctx.fillStyle = "#004d00";
-
-  ctx.beginPath();
-  ctx.moveTo(bush.x, canvas.height - 60);
-  ctx.lineTo(bush.x + bush.size / 2, canvas.height - 60 - bush.size);
-  ctx.lineTo(bush.x + bush.size, canvas.height - 60);
-  ctx.closePath();
-  ctx.fill();
-}
-
-  // Lava
-  ctx.fillStyle = "red";
-  ctx.fillRect(0, lavaHeight, canvas.width, canvas.height);
+  // Draw lava
+  ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
+  ctx.fillRect(0, lavaHeight, canvas.width, canvas.height - lavaHeight);
+  
+  // Lava top gradient
+  const lavaTop = ctx.createLinearGradient(0, lavaHeight - 10, 0, lavaHeight);
+  lavaTop.addColorStop(0, "rgba(255, 100, 0, 0.8)");
+  lavaTop.addColorStop(1, "rgba(255, 0, 0, 0.7)");
+  ctx.fillStyle = lavaTop;
+  ctx.fillRect(0, lavaHeight - 10, canvas.width, 10);
 }
 
 function drawPlayer() {
@@ -243,191 +404,113 @@ function drawPlayer() {
 }
 
 function drawPlatforms() {
+  // Remove platforms that are too far below
+  platforms = platforms.filter(plat => plat.y < player.y + canvas.height * 2);
+  
   for (let plat of platforms) {
-    // Determine fill color:
-    let fillColor = "#ffffff"; // default white
-    
-    if (plat.active) {
-      fillColor = "#777"; // solid gray when complete
-    } else if (plat.typedProgress.length > 0) {
-      fillColor = "#ddd"; // light gray while typing
+    if (!plat.active) {
+      // Draw cloud
+      ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+      for (let circle of plat.cloudCircles) {
+        ctx.beginPath();
+        ctx.arc(plat.x + circle.x, plat.y - 8 + circle.y, circle.radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Move platform
+      plat.x += plat.speed * plat.direction;
+      if (plat.x <= 0) plat.direction = 1;
+      if (plat.x + plat.width >= canvas.width) plat.direction = -1;
     }
     
-    ctx.fillStyle = fillColor;
+    // Draw platform
+    ctx.fillStyle = plat.active ? "#777" : "rgba(255, 255, 255, 0)";
     ctx.fillRect(plat.x, plat.y, plat.width, plat.height);
 
+        // Draw word with typing feedback
     if (!plat.active) {
-      const typed = plat.typedProgress;
-      const remaining = plat.word.slice(typed.length);
-
-      ctx.font = "14px Arial";
-      ctx.fillStyle = "black";
-
-      // Bold typed portion
+      const word = plat.word;
+      const typed = plat.typedProgress || "";
+      const textX = plat.x + 10; // Left-aligned position
+      const wordY = plat.y + 15; // Cloud word position
+      const typedY = plat.y + 35; // Typed text position (below cloud word)
+      
+      // Draw cloud word (left-aligned)
+      ctx.font = "20px Arial";
+      ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.textAlign = "left"; // Ensure left alignment
+      ctx.fillText(word, textX, wordY);
+      
+      // Draw typed text (left-aligned directly below)
       if (typed.length > 0) {
-        ctx.font = "bold 14px Arial";
-        ctx.fillText(typed, plat.x + 5, plat.y + 15);
-      }
-
-      // Regular remaining portion
-      if (remaining.length > 0) {
-        const typedWidth = ctx.measureText(typed).width;
-        ctx.font = "14px Arial";
-        ctx.fillText(remaining, plat.x + 5 + typedWidth, plat.y + 15);
+        if (word.startsWith(typed)) {
+          // Correct typing
+          ctx.font = "bold 20px Arial";
+          ctx.fillText(typed, textX, typedY);
+        } else {
+          // Incorrect typing
+          let correctLength = 0;
+          while (correctLength < typed.length && 
+                 typed[correctLength] === word[correctLength]) {
+            correctLength++;
+          }
+          
+          if (correctLength > 0) {
+            ctx.font = "bold 14px Arial";
+            ctx.fillText(typed.substring(0, correctLength), textX, typedY);
+          }
+          
+          if (correctLength < typed.length) {
+            const incorrectPart = typed.substring(correctLength);
+            const correctWidth = ctx.measureText(typed.substring(0, correctLength)).width;
+            
+            ctx.font = "14px Arial";
+            ctx.fillStyle = "red";
+            ctx.fillText(incorrectPart, textX + correctWidth, typedY);
+          }
+        }
       }
     }
   }
 }
 
-
-
-
-function updatePlayer() {
-  player.vy += 0.5;
-
-  // Update position
-  player.y += player.vy;
-  player.x += player.vx;
-
-  // Clamp player within screen
-  if (player.x < 0) player.x = 0;
-  if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
-
-  // Assume the player is falling
-  player.grounded = false;
-
-  // Check platform collision
-for (let plat of platforms) {
-  if (
-    plat.active &&
-    player.x + player.width > plat.x &&
-    player.x < plat.x + plat.width &&
-    player.y + player.height > plat.y &&
-    player.y + player.height <= plat.y + plat.height &&
-    player.vy >= 0
-  ) {
-    player.y = plat.y - player.height;
-    player.vy = 0;
-    player.grounded = true;
-    player.dashing = false;
-  }
+function drawScore() {
+  ctx.fillStyle = "#000";
+  ctx.font = "24px Arial";
+  ctx.textAlign = "right";
+  ctx.fillText(`Score: ${score}`, canvas.width - 20, 40);
 }
-
-
-  // Check collision with ground (green grass)
-  const groundY = canvas.height - 60;
-  if (player.y + player.height >= groundY) {
-    player.y = groundY - player.height;
-    player.vy = 0;
-    player.grounded = true;
-    player.dashing = false;
-  }
-
-  // Scroll if above mid-screen
-  if (player.y < canvas.height / 2) {
-    let delta = canvas.height / 2 - player.y;
-    player.y = canvas.height / 2;
-    scrollOffset += delta;
-    platforms.forEach(p => (p.y += delta));
-    lavaHeight += delta;
-    generatePlatform(player.y - 100);
-  }
-
-  // Game over if touching lava
-  if (player.y + player.height > lavaHeight) {
-    endGame();
-  }
-
-  //dashing logic
- if (player.dashing) {
-  player.dashTimer -= 16.67;
-
-  if (player.dashTimer <= 0) {
-    player.dashing = false;
-
-    // After dash ends, keep moving at normal speed in dash direction
-    player.vx = player.normalSpeed * player.dashDirection;
-  }
-} else {
-  // If no arrow key pressed, gradually slow down vx
-  // (optional - add friction)
-  if (!keysPressed["ArrowLeft"] && !keysPressed["ArrowRight"]) {
-    player.vx *= 0.9; // friction slows player gradually
-    if (Math.abs(player.vx) < 0.1) player.vx = 0;
-  }
-}
-
-}
-
 
 function endGame() {
   gameRunning = false;
   gameOver = true;
-  document.getElementById("game-over").classList.remove("hidden");
+  
+  // Draw game over screen
+  ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 48px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("Game Over", canvas.width/2, canvas.height/2 - 40);
+  
+  ctx.font = "36px Arial";
+  ctx.fillText(`Final Score: ${score}`, canvas.width/2, canvas.height/2 + 20);
+  
+  ctx.font = "24px Arial";
+  ctx.fillText("Press Enter to Restart", canvas.width/2, canvas.height/2 + 80);
 }
 
 function animate() {
   if (!gameRunning) return;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  updatePlayer();
   drawBackdrop();
   drawPlatforms();
-  updatePlayer();
   drawPlayer();
-  lavaHeight -= 0.05; 
-
+  drawScore();
+  
   requestAnimationFrame(animate);
 }
-
-document.addEventListener("keydown", e => {
-  if (!gameRunning) return;
-
-  if (!player.dashing) {
-    if (e.key === "ArrowLeft") {
-      player.vx = -player.normalSpeed;
-      player.dashDirection = -1;
-    }
-    if (e.key === "ArrowRight") {
-      player.vx = player.normalSpeed;
-      player.dashDirection = 1;
-    }
-  }
-
-  if (e.key === " " && player.grounded) {
-    player.vy = -13;
-  } else if (e.key === " " && !player.grounded && !player.dashing) {
-    player.dashing = true;
-    player.dashTimer = player.dashDuration;
-    player.vx = player.dashSpeed * player.dashDirection;
-  }
-
-  // Handle typing
-  if (e.key.length === 1 && e.key.match(/[a-zA-Z]/)) {
-    const typedChar = e.key.toLowerCase();
-
-    for (let plat of platforms) {
-  if (plat.active) continue;
-
-  const expected = plat.word[plat.typedProgress.length];
-
-  if (typedChar === expected) {
-    plat.typedProgress += typedChar;
-
-  if (plat.typedProgress.length === plat.word.trim().length) {
-  plat.active = true;
-  plat.typedProgress = "";
-  console.log(`Activated platform: ${plat.word}`);
-}
-  } else if (plat.typedProgress.length > 0) {
-    // Only reset if player had started typing this word
-    plat.typedProgress = "";
-  }
-}
-
-  }
-});
-
-
-document.addEventListener("keyup", e => {
-  if (e.key === "ArrowLeft" || e.key === "ArrowRight") player.vx = 0;
-});
