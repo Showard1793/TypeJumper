@@ -1,49 +1,29 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-function resizeCanvas() {
-  // Set canvas logical size to 1/3 of window width (but full height)
-  const canvasWidth = window.innerWidth / 3;
-  canvas.width = canvasWidth;
-  canvas.height = window.innerHeight;
-
-  // No need for manual positioning - CSS handles centering
-  // Remove any previous positioning styles
-  canvas.style.position = "";
-  canvas.style.left = "";
-  canvas.style.top = "";
-}
-
-window.addEventListener("resize", () => {
-  resizeCanvas();
-});
-
-// Initial sizing
-resizeCanvas();
-
+// Game state
+let gameStartTime = 0;
+let groundCoveredByLava = false;
+const lavaGracePeriod = 6000;//4 seconds
+const baseLavaSpeed = 0.05; // Original speed
+const fastLavaSpeed = 0.25;// Increased speed after grace period
 let gameRunning = false;
 let gameOver = false;
+let score = 0;
 let platforms = [];
 let bushes = [];
 let words = [];
-
-fetch('words.txt')
-  .then(res => res.text())
-  .then(text => {
-    words = text.split('\n').filter(word => word.length >= 3 && word.length <= 10);
-    startGame(); // Start after words load
-  });
 let typed = "";
-let initialLavaHeight = canvas.height - 1;
-let lavaHeight = initialLavaHeight;
+let lavaHeight = 0;
 let scrollOffset = 0;
+let highestPlayerPosition = 0;
+let currentTypingPlatform = null;
+let lastCorrectPlatformY = 0;
 
-const grassHeight = 60;
-let showGround = true;
-
+// Player object
 const player = {
-  x: canvas.width / 2 - 10,  // Now properly centered in the narrower canvas
-  y: canvas.height - grassHeight - 20,
+  x: 0,
+  y: 0,
   width: 20,
   height: 20,
   color: "gray",
@@ -54,97 +34,102 @@ const player = {
   dashSpeed: 15,
   dashDuration: 200,
   dashTimer: 0,
-  dashDirection: 1, // 1 for right, -1 for left
+  dashDirection: 1,
   normalSpeed: 5
 };
 
-function updatePlayer() {
-  player.vy += 0.5;
-  player.y += player.vy;
-  player.x += player.vx;
-
-  // Clamp horizontal position
-  if (player.x < 0) player.x = 0;
-  if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
-
-  player.grounded = false;
-
-  // Platform collision
-  for (let plat of platforms) {
-    if (
-      plat.active &&
-      player.x + player.width > plat.x &&
-      player.x < plat.x + plat.width &&
-      player.y + player.height > plat.y &&
-      player.y + player.height <= plat.y + plat.height &&
-      player.vy >= 0
-    ) {
-      player.y = plat.y - player.height;
-      player.vy = 0;
-      player.grounded = true;
-      player.dashing = false;
-    }
-  }
-
-  // Ground collision
-  const groundY = canvas.height - grassHeight;
-  if (player.y + player.height >= groundY && showGround) {
-    player.y = groundY - player.height;
-    player.vy = 0;
-    player.grounded = true;
-    player.dashing = false;
-  }
-
-  // Scroll world if player goes above top 1/8 of screen
-  const topThreshold = canvas.height / 8;
-  if (player.y < topThreshold) {
-    const delta = topThreshold - player.y;
-
-    // Scroll world down
-    player.y = topThreshold;
-
-    // Move platforms and lava down (player visually moves up)
-    platforms.forEach(p => p.y += delta);
-    bushes.forEach(b => b.y += delta);
-    lavaHeight += delta;
-    scrollOffset += delta;
-
-    // Hide ground after enough scroll
-    showGround = scrollOffset < canvas.height / 2;
-
-    // Generate new platforms above player (only 1 at a time)
-    generatePlatform(player.y - 150);
-  }
-
-  // Game over if player hits lava
-  if (player.y + player.height > lavaHeight) {
-    endGame();
-  }
-
-  // Keep lava visible
-  if (lavaHeight > canvas.height - 1) {
-    lavaHeight = canvas.height - 1;
-  }
-
-  // Dashing logic
-  if (player.dashing) {
-    player.dashTimer -= 16.67;
-    if (player.dashTimer <= 0) {
-      player.dashing = false;
-      player.vx = player.normalSpeed * player.dashDirection;
-    }
-  } else {
-    if (!keysPressed["ArrowLeft"] && !keysPressed["ArrowRight"]) {
-      player.vx *= 0.9;
-      if (Math.abs(player.vx) < 0.1) player.vx = 0;
-    }
-  }
+// Canvas setup
+function resizeCanvas() {
+  const canvasWidth = window.innerWidth / 3;
+  canvas.width = canvasWidth;
+  canvas.height = window.innerHeight;
 }
 
-const keysPressed = {};
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
 
+// Load words
+fetch('words.txt')
+  .then(res => res.text())
+  .then(text => {
+    words = text.split('\n').filter(word => word.length >= 3 && word.length <= 10);
+    showStartScreen();
+  });
+
+// Game constants
+const grassHeight = 60;
+const platformSpacing = 150;
+
+// Input handling
+const keysPressed = {};
 document.addEventListener("keydown", e => {
   keysPressed[e.key] = true;
+  
+  if (!gameRunning && e.key === "Enter" && words.length > 0) {
+    startGame();
+  }
+  
+  if (gameOver && e.key === "Enter") {
+    restartGame();
+  }
+
+  // Handle jumping and dashing
+  if (gameRunning && !gameOver) {
+    if (e.key === " ") {
+      if (player.grounded) {
+        player.vy = -13; // Jump
+      } else if (!player.dashing) {
+        player.dashing = true; // Dash
+        player.dashTimer = player.dashDuration;
+        player.vx = player.dashSpeed * player.dashDirection;
+      }
+    }
+
+    // Handle backspace
+    if (e.key === "Backspace") {
+      if (currentTypingPlatform) {
+        currentTypingPlatform.incorrectChar = null;
+        if (currentTypingPlatform.typedProgress.length > 0) {
+          currentTypingPlatform.typedProgress = 
+            currentTypingPlatform.typedProgress.slice(0, -1);
+        }
+      }
+      return;
+    }
+
+    // Handle typing letters
+    if (e.key.length === 1 && e.key.match(/[a-zA-Z]/)) {
+      const typedChar = e.key.toLowerCase();
+
+      // Find the next platform above player to type on
+      if (!currentTypingPlatform || 
+          currentTypingPlatform.active || 
+          currentTypingPlatform.y > player.y) {
+        currentTypingPlatform = platforms
+          .filter(p => !p.active && p.y < player.y)
+          .sort((a, b) => b.y - a.y)[0];
+      }
+
+      if (currentTypingPlatform) {
+        const expected = currentTypingPlatform.word[currentTypingPlatform.typedProgress.length].toLowerCase();
+
+        if (typedChar === expected) {
+          currentTypingPlatform.typedProgress += typedChar;
+          currentTypingPlatform.incorrectChar = null;
+
+          if (currentTypingPlatform.typedProgress.length === 
+              currentTypingPlatform.word.trim().length) {
+            currentTypingPlatform.active = true;
+            currentTypingPlatform.typedProgress = "";
+            score += currentTypingPlatform.word.length;
+            lastCorrectPlatformY = currentTypingPlatform.y;
+          }
+        } else if (currentTypingPlatform.typedProgress.length > 0) {
+          currentTypingPlatform.incorrectChar = typedChar;
+        }
+      }
+    }
+  }
 });
 
 document.addEventListener("keyup", e => {
@@ -154,32 +139,57 @@ document.addEventListener("keyup", e => {
   }
 });
 
-document.getElementById("start-btn").addEventListener("click", () => {
-  if (words.length > 0) {
-    document.getElementById("start-menu").classList.add("hidden");
-    canvas.classList.remove("hidden");
-    gameRunning = true;
-    initializePlatforms();
-    generateBushes();
-    animate();
-  } else {
-    alert("Words not loaded yet. Please wait a moment.");
-  }
-});
+
+
+// Start screen
+function showStartScreen() {
+  ctx.fillStyle = "#87CEEB";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  ctx.fillStyle = "#000";
+  ctx.font = "bold 48px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("Type Jumper", canvas.width/2, canvas.height/3);
+  
+  ctx.font = "24px Arial";
+  ctx.fillText("Controls:", canvas.width/2, canvas.height/2 - 30);
+  ctx.fillText("Arrow Keys: Move", canvas.width/2, canvas.height/2);
+  ctx.fillText("Space: Jump", canvas.width/2, canvas.height/2 + 30);
+  ctx.fillText("Space in Air: Dash", canvas.width/2, canvas.height/2 + 60);
+  
+  ctx.font = "bold 28px Arial";
+  ctx.fillText("Press Enter to Start!", canvas.width/2, canvas.height/2 + 120);
+}
 
 function startGame() {
-  document.getElementById("start-menu").classList.add("hidden");
-  canvas.classList.remove("hidden");
+  groundCoveredByLava = false;
   gameRunning = true;
+  gameOver = false;
+  score = 0;
+  scrollOffset = 0;
+  highestPlayerPosition = 0;
+  currentTypingPlatform = null;
+  lastCorrectPlatformY = 0;
+  gameStartTime = Date.now(); // Record when game started
+  
+  player.x = canvas.width / 2 - 10;
+  player.y = canvas.height - grassHeight - 20;
+  player.vy = 0;
+  player.vx = 0;
+  
+  lavaHeight = canvas.height - 1;
+  
+  platforms = [];
   initializePlatforms();
+  
+  bushes = [];
   generateBushes();
+  
   animate();
 }
 
 function generateBushes() {
-  bushes = [];
   const bushCount = 20;
-
   for (let i = 0; i < bushCount; i++) {
     let size = Math.random() * 20 + 20;
     let x = Math.random() * canvas.width;
@@ -188,19 +198,15 @@ function generateBushes() {
   }
 }
 
-
 function restartGame() {
   location.reload();
 }
 
 function initializePlatforms() {
-  platforms = [];
   let baseY = canvas.height - 100;
-
-  // Generate more initial platforms (15 instead of 10)
-  for (let i = 0; i < 15; i++) {
+  for (let i = 0; i < 1000; i++) {
     generatePlatform(baseY);
-    baseY = platforms[platforms.length - 1].y;
+    baseY = platforms[platforms.length - 1].y - (Math.random() * 60 + 40);
   }
 }
 
@@ -208,53 +214,164 @@ function generatePlatform(baseY) {
   const maxAttempts = 10;
   let attempt = 0;
   let placed = false;
+  const fixedHeightDifference = 80; // Fixed vertical distance between platforms
+  const minHorizontalMargin = 20; // Minimum space from screen edges
 
   while (attempt < maxAttempts && !placed) {
     const word = words[Math.floor(Math.random() * words.length)];
-    const width = 50 + word.length * 10;
-    const x = Math.random() * (canvas.width - width); // Now uses correct canvas width
-    const y = baseY - Math.random() * 60 - 40;
+    const width =  word.length * 10;
     
-    const speed = Math.random() * 2 + 1;
+    // Fixed vertical position (no randomness)
+    const y = baseY - fixedHeightDifference;
+    
+    // Horizontal position with edge padding
+    const x = minHorizontalMargin + 
+              Math.random() * (canvas.width - width - minHorizontalMargin * 2);
+    
+    // Consistent movement speed (optional - remove if you want varied speeds)
+    const speed = 1.5; // Fixed speed instead of random
     const direction = Math.random() > 0.5 ? 1 : -1;
     
-    // Generate cloud circles - smaller center, bigger surrounding circles
-    const cloudCircles = [];
-    const circleCount = Math.floor(Math.random() * 4) + 5; // 5-8 circles
-    
-    // Smaller center circle
-    cloudCircles.push({
-      x: width/2,
-      y: 0,
-      radius: width/4
-    });
-    
-    // Larger surrounding circles
-    for (let i = 0; i < circleCount; i++) {
-      cloudCircles.push({
-        x: Math.random() * width,
-        y: Math.random() * 25 - 12.5,
-        radius: Math.random() * 25 + 20 // Bigger radius (20-45)
-      });
-    }
+    // Consistent cloud appearance
+    const cloudCircles = [
+      // Main center circle
+      { x: width/2, y: 0, radius: width/4 },
+      // Consistent surrounding circles
+      { x: width * 0.2, y: -10, radius: 30 },
+      { x: width * 0.8, y: -5, radius: 25 },
+      { x: width * 0.3, y: 5, radius: 20 },
+      { x: width * 0.7, y: 8, radius: 35 }
+    ];
 
-    // Check for overlap
     const overlaps = platforms.some(p =>
-      y < p.y + p.height &&
-      y + 20 > p.y &&
-      x < p.x + p.width &&
-      x + width > p.x
-    );
+      Math.abs(p.y - y) < platformSpacing &&
+      ((x + width > p.x && x < p.x + p.width)
+    ));
 
     if (!overlaps) {
       platforms.push({ 
         x, y, width, height: 20, word,
         active: false, typedProgress: "",
-        speed, direction, cloudCircles
+        speed, direction, cloudCircles,
+        incorrectChar: null
       });
       placed = true;
     }
     attempt++;
+  }
+}
+
+function updatePlayer() {
+  // Handle horizontal movement
+  if (!player.dashing) {
+    if (keysPressed["ArrowLeft"]) {
+      player.vx = -player.normalSpeed;
+      player.dashDirection = -1;
+    } else if (keysPressed["ArrowRight"]) {
+      player.vx = player.normalSpeed;
+      player.dashDirection = 1;
+    } else if (!player.dashing) {
+      player.vx *= 0.9;
+      if (Math.abs(player.vx) < 0.1) player.vx = 0;
+    }
+  }
+
+  // Apply gravity
+  player.vy += 0.5;
+  player.y += player.vy;
+  player.x += player.vx;
+
+  // Clamp horizontal position
+  player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+
+  // Check for ground/platform collisions
+  player.grounded = false;
+  
+  // Platform collision
+  for (let plat of platforms) {
+    if (
+      plat.active &&
+      player.x + player.width > plat.x &&
+      player.x < plat.x + plat.width &&
+      player.y + player.height > plat.y &&
+      player.y + player.height <= plat.y + plat.height + 5 &&
+      player.vy >= 0
+    ) {
+      player.y = plat.y - player.height;
+      player.vy = 0;
+      player.grounded = true;
+      player.dashing = false;
+    }
+  }
+
+  // Check if lava has covered the ground
+  if (!groundCoveredByLava && lavaHeight <= canvas.height - grassHeight) {
+    groundCoveredByLava = true;
+  }
+
+  // Ground collision (only if not covered by lava)
+  const groundY = canvas.height - grassHeight;
+  if (!groundCoveredByLava && player.y + player.height >= groundY && player.y + player.height < lavaHeight) {
+    player.y = groundY - player.height;
+    player.vy = 0;
+    player.grounded = true;
+    player.dashing = false;
+  }
+
+  // Handle scrolling when player goes above threshold
+  const topThreshold = canvas.height / 4;
+  if (player.y < topThreshold) {
+    const delta = topThreshold - player.y;
+    scrollOffset += delta;
+    
+    // Move everything down
+    player.y = topThreshold;
+    platforms.forEach(p => p.y += delta);
+    bushes.forEach(b => b.y += delta);
+    lavaHeight += delta;
+  }
+
+  // Track highest position for score
+  if (player.y < highestPlayerPosition) {
+    highestPlayerPosition = player.y;
+  }
+
+  // Handle lava
+  const currentTime = Date.now();
+  const timeSinceStart = currentTime - gameStartTime;
+  
+  // Only rise lava after grace period
+  if (timeSinceStart > lavaGracePeriod) {
+    // Use faster lava speed after grace period
+    lavaHeight -= fastLavaSpeed; 
+  } else {
+    // Optional: You could add a visual countdown here
+  }
+
+  // Reset lava if it's too far below screen
+  if (lavaHeight > canvas.height) {
+    lavaHeight = canvas.height - 1;
+    platforms = platforms.filter(p => p.y < canvas.height * 2);
+  }
+
+  // Generate new platforms when needed
+  const lowestPlatform = Math.min(...platforms.map(p => p.y));
+  if (lowestPlatform > player.y + canvas.height) {
+    generatePlatform(player.y - platformSpacing);
+  }
+
+  // Game over if player hits lava
+  if (player.y + player.height > lavaHeight && !gameOver) {
+    endGame();
+  }
+
+  // Dashing logic
+  if (player.dashing) {
+    player.dashTimer -= 16.67;
+    if (player.dashTimer <= 0) {
+      player.dashing = false;
+      player.vx = player.normalSpeed * player.dashDirection;
+    }
   }
 }
 
@@ -263,28 +380,22 @@ function drawBackdrop() {
   ctx.fillStyle = "#87CEEB";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Only draw grass and bushes if they're above lava
-  if (showGround && canvas.height - grassHeight < lavaHeight) {
+  // Only draw ground if not covered by lava
+  if (!groundCoveredByLava) {
     ctx.fillStyle = "#90EE90";
     ctx.fillRect(0, canvas.height - grassHeight, canvas.width, grassHeight);
-
-    // Draw bushes
-    for (let bush of bushes) {
-      if (bush.y < lavaHeight) {
-        ctx.fillStyle = bush.zIndex ? "#006400" : "#004d00";
-        ctx.beginPath();
-        ctx.moveTo(bush.x, bush.y);
-        ctx.lineTo(bush.x + bush.size / 2, bush.y - bush.size);
-        ctx.lineTo(bush.x + bush.size, bush.y);
-        ctx.closePath();
-        ctx.fill();
-      }
-    }
   }
 
   // Draw lava
-  ctx.fillStyle = "red";
+  ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
   ctx.fillRect(0, lavaHeight, canvas.width, canvas.height - lavaHeight);
+  
+  // Lava top gradient
+  const lavaTop = ctx.createLinearGradient(0, lavaHeight - 10, 0, lavaHeight);
+  lavaTop.addColorStop(0, "rgba(255, 100, 0, 0.8)");
+  lavaTop.addColorStop(1, "rgba(255, 0, 0, 0.7)");
+  ctx.fillStyle = lavaTop;
+  ctx.fillRect(0, lavaHeight - 10, canvas.width, 10);
 }
 
 function drawPlayer() {
@@ -293,29 +404,18 @@ function drawPlayer() {
 }
 
 function drawPlatforms() {
-  platforms = platforms.filter(plat => 
-    plat.y + plat.height > lavaHeight || plat.y < player.y + canvas.height
-  );
+  // Remove platforms that are too far below
+  platforms = platforms.filter(plat => plat.y < player.y + canvas.height * 2);
   
   for (let plat of platforms) {
     if (!plat.active) {
-      // Draw cloud background with more fluffiness
+      // Draw cloud
       ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
       for (let circle of plat.cloudCircles) {
         ctx.beginPath();
-        ctx.arc(
-          plat.x + circle.x, 
-          plat.y - 8 + circle.y, // Higher position
-          circle.radius, 
-          0, 
-          Math.PI * 2
-        );
+        ctx.arc(plat.x + circle.x, plat.y - 8 + circle.y, circle.radius, 0, Math.PI * 2);
         ctx.fill();
-        
       }
-      
-      // Reset shadow
-      ctx.shadowColor = "transparent";
       
       // Move platform
       plat.x += plat.speed * plat.direction;
@@ -323,96 +423,94 @@ function drawPlatforms() {
       if (plat.x + plat.width >= canvas.width) plat.direction = -1;
     }
     
-    // Draw platform rectangle (transparent when inactive)
+    // Draw platform
     ctx.fillStyle = plat.active ? "#777" : "rgba(255, 255, 255, 0)";
     ctx.fillRect(plat.x, plat.y, plat.width, plat.height);
 
-    // Draw word text with better visibility
+        // Draw word with typing feedback
     if (!plat.active) {
-      const typed = plat.typedProgress;
-      const remaining = plat.word.slice(typed.length);
+      const word = plat.word;
+      const typed = plat.typedProgress || "";
+      const textX = plat.x + 10; // Left-aligned position
+      const wordY = plat.y + 15; // Cloud word position
+      const typedY = plat.y + 35; // Typed text position (below cloud word)
       
-      ctx.font = "bold 14px Arial";
+      // Draw cloud word (left-aligned)
+      ctx.font = "20px Arial";
       ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.textAlign = "left"; // Ensure left alignment
+      ctx.fillText(word, textX, wordY);
       
+      // Draw typed text (left-aligned directly below)
       if (typed.length > 0) {
-        ctx.fillText(typed, plat.x + 10, plat.y + 15);
-        const typedWidth = ctx.measureText(typed).width;
-        
-        ctx.font = "14px Arial";
-        ctx.fillText(remaining, plat.x + 10 + typedWidth, plat.y + 15);
-      } else {
-        ctx.fillText(plat.word, plat.x + 10, plat.y + 15);
+        if (word.startsWith(typed)) {
+          // Correct typing
+          ctx.font = "bold 20px Arial";
+          ctx.fillText(typed, textX, typedY);
+        } else {
+          // Incorrect typing
+          let correctLength = 0;
+          while (correctLength < typed.length && 
+                 typed[correctLength] === word[correctLength]) {
+            correctLength++;
+          }
+          
+          if (correctLength > 0) {
+            ctx.font = "bold 14px Arial";
+            ctx.fillText(typed.substring(0, correctLength), textX, typedY);
+          }
+          
+          if (correctLength < typed.length) {
+            const incorrectPart = typed.substring(correctLength);
+            const correctWidth = ctx.measureText(typed.substring(0, correctLength)).width;
+            
+            ctx.font = "14px Arial";
+            ctx.fillStyle = "red";
+            ctx.fillText(incorrectPart, textX + correctWidth, typedY);
+          }
+        }
       }
     }
   }
 }
 
+function drawScore() {
+  ctx.fillStyle = "#000";
+  ctx.font = "24px Arial";
+  ctx.textAlign = "right";
+  ctx.fillText(`Score: ${score}`, canvas.width - 20, 40);
+}
+
 function endGame() {
   gameRunning = false;
   gameOver = true;
-  document.getElementById("game-over").classList.remove("hidden");
+  
+  // Draw game over screen
+  ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 48px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("Game Over", canvas.width/2, canvas.height/2 - 40);
+  
+  ctx.font = "36px Arial";
+  ctx.fillText(`Final Score: ${score}`, canvas.width/2, canvas.height/2 + 20);
+  
+  ctx.font = "24px Arial";
+  ctx.fillText("Press Enter to Restart", canvas.width/2, canvas.height/2 + 80);
 }
 
 function animate() {
   if (!gameRunning) return;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  updatePlayer();
   drawBackdrop();
   drawPlatforms();
-  updatePlayer();
   drawPlayer();
+  drawScore();
   
-  // Slowly rise lava
-  lavaHeight -= 0.05;
-
   requestAnimationFrame(animate);
 }
-
-document.addEventListener("keydown", e => {
-  if (!gameRunning) return;
-
-  if (!player.dashing) {
-    if (e.key === "ArrowLeft") {
-      player.vx = -player.normalSpeed;
-      player.dashDirection = -1;
-    }
-    if (e.key === "ArrowRight") {
-      player.vx = player.normalSpeed;
-      player.dashDirection = 1;
-    }
-  }
-
-  if (e.key === " " && player.grounded) {
-    player.vy = -13;
-  } else if (e.key === " " && !player.grounded && !player.dashing) {
-    player.dashing = true;
-    player.dashTimer = player.dashDuration;
-    player.vx = player.dashSpeed * player.dashDirection;
-  }
-
-  // Handle typing
-  if (e.key.length === 1 && e.key.match(/[a-zA-Z]/)) {
-    const typedChar = e.key.toLowerCase();
-
-    for (let plat of platforms) {
-      if (plat.active) continue;
-
-      const expected = plat.word[plat.typedProgress.length];
-
-      if (typedChar === expected) {
-        plat.typedProgress += typedChar;
-
-        if (plat.typedProgress.length === plat.word.trim().length) {
-          plat.active = true;
-          plat.typedProgress = "";
-          // When activated, make it a solid platform
-          ctx.fillStyle = "#777";
-          ctx.fillRect(plat.x, plat.y, plat.width, plat.height);
-        }
-      } else if (plat.typedProgress.length > 0) {
-        plat.typedProgress = "";
-      }
-    }
-  }
-});
