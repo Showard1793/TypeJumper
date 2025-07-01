@@ -4,9 +4,14 @@ const ctx = canvas.getContext("2d");
 // Game state
 let gameStartTime = 0;
 let groundCoveredByLava = false;
-const lavaGracePeriod = 6000;//4 seconds
+const lavaGracePeriod = 10000; // 10 seconds
+let showCountdown = false;
+let countdownValue = 0;
 const baseLavaSpeed = 0.05; // Original speed
 const fastLavaSpeed = 0.25;// Increased speed after grace period
+const maxLavaSpeed = 1.0; // Maximum speed lava can reach
+const lavaAcceleration = 0.00001; // How quickly lava speeds up
+let currentLavaSpeed = baseLavaSpeed; // Start with base speed
 let gameRunning = false;
 let gameOver = false;
 let score = 0;
@@ -31,7 +36,7 @@ const player = {
   vx: 0,
   grounded: false,
   dashing: false,
-  dashSpeed: 15,
+  dashSpeed: 20,
   dashDuration: 200,
   dashTimer: 0,
   dashDirection: 1,
@@ -57,7 +62,7 @@ fetch('words.txt')
   });
 
 // Game constants
-const grassHeight = 60;
+const grassHeight = 100;
 const platformSpacing = 150;
 
 // Input handling
@@ -162,6 +167,8 @@ function showStartScreen() {
 }
 
 function startGame() {
+   showCountdown = true;
+  countdownValue = lavaGracePeriod / 1000; // Convert to seconds
   groundCoveredByLava = false;
   gameRunning = true;
   gameOver = false;
@@ -336,16 +343,27 @@ function updatePlayer() {
     highestPlayerPosition = player.y;
   }
 
-  // Handle lava
+   // Handle lava
   const currentTime = Date.now();
   const timeSinceStart = currentTime - gameStartTime;
   
-  // Only rise lava after grace period
   if (timeSinceStart > lavaGracePeriod) {
+    showCountdown = false;
     // Use faster lava speed after grace period
     lavaHeight -= fastLavaSpeed; 
   } else {
-    // Optional: You could add a visual countdown here
+    // Update countdown value
+    countdownValue = Math.ceil((lavaGracePeriod - timeSinceStart) / 1000);
+  }
+  
+  // Only rise lava after grace period
+  if (timeSinceStart > lavaGracePeriod) {
+    // Gradually increase speed up to maxLavaSpeed
+    currentLavaSpeed = Math.min(
+      baseLavaSpeed + (timeSinceStart - lavaGracePeriod) * lavaAcceleration,
+      maxLavaSpeed
+    );
+    lavaHeight -= currentLavaSpeed;
   }
 
   // Reset lava if it's too far below screen
@@ -386,18 +404,23 @@ function drawBackdrop() {
     ctx.fillRect(0, canvas.height - grassHeight, canvas.width, grassHeight);
   }
 
-  // Draw lava
-  ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
-  ctx.fillRect(0, lavaHeight, canvas.width, canvas.height - lavaHeight);
-  
-  // Lava top gradient
-  const lavaTop = ctx.createLinearGradient(0, lavaHeight - 10, 0, lavaHeight);
-  lavaTop.addColorStop(0, "rgba(255, 100, 0, 0.8)");
-  lavaTop.addColorStop(1, "rgba(255, 0, 0, 0.7)");
-  ctx.fillStyle = lavaTop;
-  ctx.fillRect(0, lavaHeight - 10, canvas.width, 10);
+  // Draw countdown message
+  if (showCountdown && countdownValue > 0) {
+    const messageY = canvas.height - 40 ;
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    ctx.font = "bold 48px Arial";
+    ctx.textAlign = "center";
+    
+    if (countdownValue <= 3) {
+      ctx.fillStyle = "rgba(255, 50, 50, 0.8)";
+    }
+    
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 4;
+    ctx.strokeText(`Lava rises in: ${countdownValue}`, canvas.width/2, messageY);
+    ctx.fillText(`Lava rises in: ${countdownValue}`, canvas.width/2, messageY);
+  }
 }
-
 function drawPlayer() {
   ctx.fillStyle = player.color;
   ctx.fillRect(player.x, player.y, player.width, player.height);
@@ -507,10 +530,22 @@ function animate() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
   updatePlayer();
-  drawBackdrop();
-  drawPlatforms();
-  drawPlayer();
-  drawScore();
+  drawBackdrop(); // Draws sky and countdown
+  drawPlatforms(); // Draws all platforms
+  drawPlayer(); // Draws player
+  
+  // Draw lava last so it covers everything
+  ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
+  ctx.fillRect(0, lavaHeight, canvas.width, canvas.height - lavaHeight);
+  
+  // Lava top gradient
+  const lavaTop = ctx.createLinearGradient(0, lavaHeight - 10, 0, lavaHeight);
+  lavaTop.addColorStop(0, "rgba(255, 100, 0, 0.8)");
+  lavaTop.addColorStop(1, "rgba(255, 0, 0, 0.7)");
+  ctx.fillStyle = lavaTop;
+  ctx.fillRect(0, lavaHeight - 10, canvas.width, 10);
+
+  drawScore(); // Draw score last so it's always visible
   
   requestAnimationFrame(animate);
 }
