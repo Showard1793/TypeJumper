@@ -1,4 +1,3 @@
-
 /* ───────── Canvas & Context ───────── */
 const canvas = document.getElementById("gameCanvas");
 const ctx     = canvas.getContext("2d");
@@ -40,6 +39,16 @@ let scrollOffset        = 0;
 let highestPlayerPosition = 0;
 let currentTypingPlatform = null;
 let lastCorrectPlatformY  = 0;
+
+/* ───────── Cannonball Parameters ───────── */
+const cannonballParams = {
+  size: 30,
+  speed: 5,
+  appearsAfterNumberOfWords: 5,
+  color: "black"
+};
+let cannonballs = [];
+let wordsTypedSinceLastCannonball = 0;
 
 /* ───────── Player ───────── */
 const player = {
@@ -137,6 +146,13 @@ document.addEventListener("keydown", e => {
           currentTypingPlatform.typedProgress = "";
           score += currentTypingPlatform.word.length;
           lastCorrectPlatformY = currentTypingPlatform.y;
+          
+          // Track words typed for cannonball spawning
+          wordsTypedSinceLastCannonball++;
+          if (wordsTypedSinceLastCannonball >= cannonballParams.appearsAfterNumberOfWords) {
+            spawnCannonball();
+            wordsTypedSinceLastCannonball = 0;
+          }
         }
       } else if (idx > 0) {
         currentTypingPlatform.incorrectChar = typedChar;
@@ -149,6 +165,69 @@ document.addEventListener("keyup", e => {
   keysPressed[e.key] = false;
   if (e.key === "ArrowLeft" || e.key === "ArrowRight") player.vx = 0;
 });
+
+/* ───────── Cannonball Functions ───────── */
+function spawnCannonball() {
+  const angle = Math.random() * Math.PI / 4 + Math.PI / 8; // Random angle between 22.5° and 67.5°
+  const vx = Math.cos(angle) * cannonballParams.speed;
+  const vy = Math.sin(angle) * cannonballParams.speed;
+  
+  cannonballs.push({
+    x: 0,
+    y: 0,
+    radius: cannonballParams.size / 2,
+    vx: vx,
+    vy: vy,
+    color: cannonballParams.color
+  });
+}
+
+function updateCannonballs() {
+  for (let i = cannonballs.length - 1; i >= 0; i--) {
+    const ball = cannonballs[i];
+    
+    // Update position
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+    
+    // Bounce off edges
+    if (ball.x - ball.radius <= 0 || ball.x + ball.radius >= canvas.width) {
+      ball.vx = -ball.vx;
+      ball.x = Math.max(ball.radius, Math.min(canvas.width - ball.radius, ball.x));
+    }
+    
+    if (ball.y - ball.radius <= 0 || ball.y + ball.radius >= canvas.height) {
+      ball.vy = -ball.vy;
+      ball.y = Math.max(ball.radius, Math.min(canvas.height - ball.radius, ball.y));
+    }
+    
+    // Check collision with player
+    if (!gameOver && !freezeGame) {
+      const distX = Math.abs(ball.x - (player.x + player.width / 2));
+      const distY = Math.abs(ball.y - (player.y + player.height / 2));
+      
+      if (distX < (player.width / 2 + ball.radius) && 
+          distY < (player.height / 2 + ball.radius)) {
+        // Game over on collision
+        freezeGame = true;
+        setTimeout(() => {
+          fadingOut = true;
+          fadeOpacity = 0;
+        }, 1000);
+      }
+    }
+  }
+}
+
+function drawCannonballs() {
+  for (const ball of cannonballs) {
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+    ctx.fillStyle = ball.color;
+    ctx.fill();
+    ctx.closePath();
+  }
+}
 
 /* ───────── UI Screens ───────── */
 function showStartScreen() {
@@ -198,6 +277,8 @@ function startGame() {
   currentTypingPlatform = null;
   lastCorrectPlatformY  = 0;
   gameStartTime         = Date.now();
+  wordsTypedSinceLastCannonball = 0;
+  cannonballs = [];
 
   player.x = canvas.width / 2 - 10;
   player.y = canvas.height - grassHeight - 20;
@@ -535,12 +616,14 @@ function animate() {
   // Only update game state if not frozen
   if (!freezeGame) {
     updatePlayer();
+    updateCannonballs();
   }
 
   // Draw game world
   drawBackdrop();
   drawPlatforms();
   drawPlayer();
+  drawCannonballs();
 
   // Draw lava
   ctx.fillStyle = "rgba(255,0,0,0.7)";
@@ -575,6 +658,3 @@ function animate() {
   // Continue animation loop
   requestAnimationFrame(animate);
 }
-
-
-
