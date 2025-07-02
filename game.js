@@ -406,15 +406,38 @@ function restartGame() { location.reload(); }
 
 /* ───────── Scenery & Obstacles ───────── */
 function generateBushes() {
-  const bushCount = 20;
+  const bushCount = 3;                          // ¼ as many as before
   bushes = [];
+
   for (let i = 0; i < bushCount; i++) {
-    const size    = Math.random() * 20 + 20;
-    const x       = Math.random() * canvas.width;
-    const zIndex  = Math.random() > 0.5;
-    bushes.push({ x, size, zIndex, y: canvas.height - grassHeight });
+    const height = Math.random() * 50 + 50;     // 30 – 60 px tall (triangles)
+    const halfBase = height * (Math.random() * 0.01 + 0.25); // 50–70 % of height
+
+    const isHalfCircle = Math.random() < 0.3;   // 30 % chance
+
+    // Half‑circles are a bit smaller
+    const radius = isHalfCircle ? height * 0.3 : null;
+
+    const x = Math.random() * (canvas.width - 2 * (isHalfCircle ? radius : halfBase))
+            + (isHalfCircle ? radius : halfBase);
+
+    const y = canvas.height - grassHeight;      // baseline sits on grass
+    const behind = Math.random() < 0.5;         // depth flag
+
+    bushes.push({
+      x,
+      y,
+      shape: isHalfCircle ? "half" : "triangle",
+      height,            // only used by triangles
+      halfBase,          //   »     »     »
+      radius,            // only used by half‑circles
+      behind
+    });
   }
 }
+
+
+
 
 function initializePlatforms() {
   let baseY = canvas.height - 100;
@@ -684,6 +707,33 @@ function drawPlatforms() {
   }
 }
 
+function drawBushes(layer = "behind") {
+  for (const b of bushes) {
+    if ((layer === "behind") !== b.behind) continue;
+
+    ctx.fillStyle = "#228B22";
+
+    if (b.shape === "triangle") {
+      const h = b.height;
+      const w = b.halfBase;
+      ctx.beginPath();
+      ctx.moveTo(b.x,         b.y - h); // apex
+      ctx.lineTo(b.x - w, b.y);         // base‑left
+      ctx.lineTo(b.x + w, b.y);         // base‑right
+      ctx.closePath();
+      ctx.fill();
+    } else { // half‑circle
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.radius, Math.PI, 0); // flat side flush with grass
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+}
+
+
+
+
 function drawScore() {
   ctx.fillStyle = "#000";
   ctx.font = "24px Arial";
@@ -729,10 +779,12 @@ function animate() {
   }
 
   // Draw game world
-  drawBackdrop();
-  drawPlatforms();
-  drawPlayer();
-  drawCannonballs();
+ drawBackdrop();
+drawBushes("behind");     // bushes the player stands IN FRONT OF
+drawPlatforms();
+drawPlayer();
+drawBushes("front");      // bushes that stand IN FRONT OF the player
+drawCannonballs();
 
   // Draw lava
   ctx.fillStyle = "rgba(255,0,0,0.7)";
