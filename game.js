@@ -308,9 +308,15 @@ function showStartScreen() {
   }
 
   // Controls details
+  // ctx.font = "24px Arial";
+  // ctx.fillText("Space: Jump / Double-Jump", canvas.width / 2, canvas.height / 2 + 100);   
+  // ctx.fillText("Arrow Keys: Move", canvas.width / 2, canvas.height / 2 + 140);
+  //  ctx.fillText("GOAL: Type the words and outrun the lava!", canvas.width / 2, canvas.height / 2 + 200);
+
   ctx.font = "24px Arial";
-  ctx.fillText("Space: Jump / Double-Jump", canvas.width / 2, canvas.height / 2 + 100);   
-  ctx.fillText("Arrow Keys: Move", canvas.width / 2, canvas.height / 2 + 140);
+  ctx.fillText("GOAL: Type the Words and Outrun the Lava!", canvas.width / 2, canvas.height / 2 + 100);   
+  ctx.fillText("Arrow Keys: Move", canvas.width / 2, canvas.height / 2 + 165);
+  ctx.fillText("Space: Jump / Double-Jump", canvas.width / 2, canvas.height / 2 + 200);
 
   // Button parameters
   const buttonText = "Press Enter to Start!";
@@ -705,8 +711,8 @@ function endGame() {
   ctx.fillText(`Your Score: ${score}`, canvas.width / 2, canvas.height / 2 - 20);
 
   // Restart prompt
-  ctx.font = "24px Arial";
-  ctx.fillText("Play Again?  Press Enter", canvas.width / 2, canvas.height / 2 + 40);
+  ctx.font = "35px Arial";
+  ctx.fillText("Press Enter to Play Again", canvas.width / 2, canvas.height / 2 + 40);
 }
 
 
