@@ -190,16 +190,16 @@ function updateCannonballs() {
     ball.x += ball.vx;
     ball.y += ball.vy;
     
-    // Bounce off edges
-    if (ball.x - ball.radius <= 0 || ball.x + ball.radius >= canvas.width) {
-      ball.vx = -ball.vx;
-      ball.x = Math.max(ball.radius, Math.min(canvas.width - ball.radius, ball.x));
-    }
-    
-    if (ball.y - ball.radius <= 0 || ball.y + ball.radius >= canvas.height) {
-      ball.vy = -ball.vy;
-      ball.y = Math.max(ball.radius, Math.min(canvas.height - ball.radius, ball.y));
-    }
+  // Bounce off edges - modified to use canvas edges relative to scroll
+if (ball.x - ball.radius <= 0 || ball.x + ball.radius >= canvas.width) {
+  ball.vx = -ball.vx;
+  ball.x = Math.max(ball.radius, Math.min(canvas.width - ball.radius, ball.x));
+}
+
+if (ball.y - ball.radius <= 0 || ball.y + ball.radius >= canvas.height) {
+  ball.vy = -ball.vy;
+  ball.y = Math.max(ball.radius, Math.min(canvas.height - ball.radius, ball.y));
+}
     
     // Check collision with player
     if (!gameOver && !freezeGame) {
@@ -427,16 +427,18 @@ function updatePlayer() {
     player.jumpCount = 0;
   }
 
-  /* Scroll world when player climbs */
-  const topThreshold = canvas.height / 4;
-  if (player.y < topThreshold) {
-    const delta = topThreshold - player.y;
-    scrollOffset += delta;
-    player.y = topThreshold;
-    platforms.forEach(p => (p.y += delta));
-    bushes.forEach(b   => (b.y += delta));
-    lavaHeight += delta;
-  }
+/* Scroll world when player climbs */
+const topThreshold = canvas.height / 4;
+if (player.y < topThreshold) {
+  const delta = topThreshold - player.y;
+  scrollOffset += delta;
+  player.y = topThreshold;
+  platforms.forEach(p => (p.y += delta));
+  bushes.forEach(b   => (b.y += delta));
+  lavaHeight += delta;
+  // Add this line to move cannonballs down
+  cannonballs.forEach(ball => (ball.y += delta));
+}
 
   if (player.y < highestPlayerPosition) highestPlayerPosition = player.y;
 
