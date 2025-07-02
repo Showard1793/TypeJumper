@@ -276,6 +276,17 @@ function drawCannonballs() {
 }
 
 /* ───────── UI Screens ───────── */
+/* ───────── Logo Parameters ───────── */
+const logoParams = {
+  src: "logo.png",       // Path to your logo image
+  width: 400,           // Adjust width as needed
+  height: 400,          // Adjust height as needed
+  yOffset: -200          // Adjust vertical position (-50 means 50px higher than original text position)
+};
+
+let logoImage = new Image();
+logoImage.src = logoParams.src;
+
 function showStartScreen() {
   // Dimmed dark overlay background like game over screen
   ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
@@ -285,19 +296,26 @@ function showStartScreen() {
   ctx.fillStyle = "#fff";
   ctx.textAlign = "center";
 
-  // Title
-  ctx.font = "bold 80px Arial";
-  ctx.fillText("Type Jumper!", canvas.width / 2, canvas.height / 3);
+  // Draw logo image if loaded
+  if (logoImage.complete) {
+    const logoX = canvas.width / 2 - logoParams.width / 2;
+    const logoY = canvas.height / 3 + logoParams.yOffset;
+    ctx.drawImage(logoImage, logoX, logoY, logoParams.width, logoParams.height);
+  } else {
+    // Fallback to text if image not loaded yet
+    ctx.font = "bold 80px Arial";
+    ctx.fillText("Type Jumper!", canvas.width / 2, canvas.height / 3);
+  }
 
   // Controls details
   ctx.font = "24px Arial";
-  ctx.fillText("Arrow Keys: Move", canvas.width / 2, canvas.height / 2 - 10);
-  ctx.fillText("Space: Jump / Double-Jump", canvas.width / 2, canvas.height / 2 + 30
-  );
+  ctx.fillText("Space: Jump / Double-Jump", canvas.width / 2, canvas.height / 2 + 100);   
+  ctx.fillText("Arrow Keys: Move", canvas.width / 2, canvas.height / 2 + 140);
 
   // Start prompt
-  ctx.font = "bold 28px Arial";
-  ctx.fillText("Press Enter to Start!", canvas.width / 2, canvas.height / 2 + 200);
+  ctx.font = "bold 50px Arial";
+  ctx.fillText("Press Enter to Start!", canvas.width / 2, canvas.height / 2 + 280);
+
 }
 
 /* ───────── Game Lifecycle ───────── */
