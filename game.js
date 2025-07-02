@@ -314,7 +314,7 @@ function showStartScreen() {
 
   // Button parameters
   const buttonText = "Press Enter to Start!";
-  const buttonFont = "bold 50px Arial";
+  const buttonFont = "bold 33px Arial";
   const buttonPadding = 40;
   const buttonRadius = 25;
   const buttonY = canvas.height / 2 + 280;
