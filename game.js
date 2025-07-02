@@ -312,10 +312,36 @@ function showStartScreen() {
   ctx.fillText("Space: Jump / Double-Jump", canvas.width / 2, canvas.height / 2 + 100);   
   ctx.fillText("Arrow Keys: Move", canvas.width / 2, canvas.height / 2 + 140);
 
-  // Start prompt
-  ctx.font = "bold 50px Arial";
-  ctx.fillText("Press Enter to Start!", canvas.width / 2, canvas.height / 2 + 280);
-
+  // Button parameters
+  const buttonText = "Press Enter to Start!";
+  const buttonFont = "bold 50px Arial";
+  const buttonPadding = 40;
+  const buttonRadius = 25;
+  const buttonY = canvas.height / 2 + 280;
+  const buttonHeight = 80; // Increased height for better proportions
+  
+  // Measure text
+  ctx.font = buttonFont;
+  const textWidth = ctx.measureText(buttonText).width;
+  const textMetrics = ctx.measureText(buttonText); // For more accurate vertical centering
+  
+  // Calculate button dimensions
+  const buttonX = canvas.width / 2 - (textWidth + buttonPadding * 2) / 2;
+  const buttonWidth = textWidth + buttonPadding * 2;
+  
+  // Draw rounded rectangle background
+  ctx.beginPath();
+  ctx.roundRect(buttonX, buttonY - buttonHeight / 2, buttonWidth, buttonHeight, buttonRadius);
+  ctx.fillStyle = "#1E90FF"; // Dodger blue color
+  ctx.fill();
+  
+  // Calculate text position for perfect vertical centering
+  const textY = buttonY + (textMetrics.actualBoundingBoxAscent - textMetrics.actualBoundingBoxDescent) / 2;
+  
+  // Draw text
+  ctx.fillStyle = "#fff";
+  ctx.font = buttonFont;
+  ctx.fillText(buttonText, canvas.width / 2, textY);
 }
 
 /* ───────── Game Lifecycle ───────── */
