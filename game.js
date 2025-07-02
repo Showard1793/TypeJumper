@@ -311,6 +311,10 @@ function startGame() {
     gameOverTimeout = null;
   }
 
+  // Stop any currently playing game over sound
+  sounds.gameOver.pause();
+  sounds.gameOver.currentTime = 0;
+
   showCountdown        = true;
   countdownValue       = lavaGracePeriod / 1000;
   groundCoveredByLava  = false;
@@ -325,6 +329,10 @@ function startGame() {
   gameStartTime         = Date.now();
   wordsTypedSinceLastCannonball = 0;
   cannonballs = [];
+
+  // Start music again
+  sounds.music.currentTime = 0;
+  sounds.music.play();
 
   player.x = canvas.width / 2 - 10;
   player.y = canvas.height - grassHeight - 20;
