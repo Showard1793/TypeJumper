@@ -1,3 +1,28 @@
+/* ───────── Sound Parameters ───────── */
+const soundParams = {
+  music: { volume: 0.5, speed: 1.0 },
+  jump: { volume: 0.1, speed: 1.0 },
+  cannonball: { volume: 0.6, speed: 1.0 },
+  gameOver: { volume: 0.5, speed: 1.0 },
+  platformMade: { volume: 0.1, speed: 1.0 },
+  typing: { volume: .99, speed: 1.0 } // Increased from original low volume
+};
+
+const sounds = {
+  music: new Audio("/sounds/music.mp3"),
+  jump: new Audio("/sounds/jump.mp3"),
+  cannonball: new Audio("/sounds/cannonball.mp3"),
+  gameOver: new Audio("/sounds/gameOver.mp3"),
+  platformMade: new Audio("/sounds/platformMade.mp3"),
+  typing: new Audio("/sounds/typing.mp3")
+};
+
+// Apply sound parameters
+for (const [name, sound] of Object.entries(sounds)) {
+  sound.volume = soundParams[name].volume;
+  sound.playbackRate = soundParams[name].speed;
+}
+
 /* ───────── Canvas & Context ───────── */
 const canvas = document.getElementById("gameCanvas");
 const ctx     = canvas.getContext("2d");
@@ -87,25 +112,38 @@ document.addEventListener("keydown", e => {
   keysPressed[e.key] = true;
 
   /* Start / restart */
-  if (!gameRunning && e.key === "Enter" && words.length > 0) startGame();
-  if (gameOver && e.key === "Enter")                          restartGame();
+  if (!gameRunning && e.key === "Enter" && words.length > 0) {
+    sounds.music.currentTime = 0;
+    sounds.music.loop = true;
+    sounds.music.play();
+    startGame();
+  }
+  if (gameOver && e.key === "Enter") {
+    sounds.music.currentTime = 0;
+    sounds.music.play();
+    restartGame();
+  }
 
   if (!gameRunning || gameOver) return;
 
   /* Jump & double‑jump */
   if (e.key === " ") {
    if (player.jumpCount < player.maxJumps) {
-  const BASE_JUMP = -13;                 // first jump height
-  player.vy = player.jumpCount === 0     // second jump is half as strong
-              ? BASE_JUMP                // ➊ first jump
-              : BASE_JUMP * 0.75;         // ➋ second jump (‑6.5)
-  player.jumpCount++;
-}
+      sounds.jump.currentTime = 0;
+      sounds.jump.play();
+      const BASE_JUMP = -13;                 // first jump height
+      player.vy = player.jumpCount === 0     // second jump is half as strong
+                  ? BASE_JUMP                // ➊ first jump
+                  : BASE_JUMP * 0.75;         // ➋ second jump (‑6.5)
+      player.jumpCount++;
+    }
   }
 
   /* Backspace for typing */
   if (e.key === "Backspace") {
     if (currentTypingPlatform) {
+      sounds.typing.currentTime = 0;
+      sounds.typing.play();
       currentTypingPlatform.incorrectChar = null;
       if (currentTypingPlatform.typedProgress.length > 0) {
         currentTypingPlatform.typedProgress =
@@ -117,6 +155,8 @@ document.addEventListener("keydown", e => {
 
   /* Letter typing */
   if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
+    sounds.typing.currentTime = 0;
+    sounds.typing.play();
     const typedChar = e.key.toLowerCase();
 
     /* find next untapped platform above player */
@@ -142,6 +182,8 @@ document.addEventListener("keydown", e => {
           currentTypingPlatform.typedProgress.length ===
           currentTypingPlatform.word.trim().length
         ) {
+          sounds.platformMade.currentTime = 0;
+          sounds.platformMade.play();
           currentTypingPlatform.active        = true;
           currentTypingPlatform.typedProgress = "";
           score += currentTypingPlatform.word.length;
@@ -168,6 +210,8 @@ document.addEventListener("keyup", e => {
 
 /* ───────── Cannonball Functions ───────── */
 function spawnCannonball() {
+  sounds.cannonball.currentTime = 0;
+  sounds.cannonball.play();
   const angle = Math.random() * Math.PI / 4 + Math.PI / 8; // Random angle between 22.5° and 67.5°
   const vx = Math.cos(angle) * cannonballParams.speed;
   const vy = Math.sin(angle) * cannonballParams.speed;
@@ -190,16 +234,16 @@ function updateCannonballs() {
     ball.x += ball.vx;
     ball.y += ball.vy;
     
-  // Bounce off edges - modified to use canvas edges relative to scroll
-if (ball.x - ball.radius <= 0 || ball.x + ball.radius >= canvas.width) {
-  ball.vx = -ball.vx;
-  ball.x = Math.max(ball.radius, Math.min(canvas.width - ball.radius, ball.x));
-}
+    // Bounce off edges - modified to use canvas edges relative to scroll
+    if (ball.x - ball.radius <= 0 || ball.x + ball.radius >= canvas.width) {
+      ball.vx = -ball.vx;
+      ball.x = Math.max(ball.radius, Math.min(canvas.width - ball.radius, ball.x));
+    }
 
-if (ball.y - ball.radius <= 0 || ball.y + ball.radius >= canvas.height) {
-  ball.vy = -ball.vy;
-  ball.y = Math.max(ball.radius, Math.min(canvas.height - ball.radius, ball.y));
-}
+    if (ball.y - ball.radius <= 0 || ball.y + ball.radius >= canvas.height) {
+      ball.vy = -ball.vy;
+      ball.y = Math.max(ball.radius, Math.min(canvas.height - ball.radius, ball.y));
+    }
     
     // Check collision with player
     if (!gameOver && !freezeGame) {
@@ -210,6 +254,9 @@ if (ball.y - ball.radius <= 0 || ball.y + ball.radius >= canvas.height) {
           distY < (player.height / 2 + ball.radius)) {
         // Game over on collision
         freezeGame = true;
+        sounds.music.pause();
+        sounds.gameOver.currentTime = 0;
+        sounds.gameOver.play();
         setTimeout(() => {
           fadingOut = true;
           fadeOpacity = 0;
@@ -218,7 +265,6 @@ if (ball.y - ball.radius <= 0 || ball.y + ball.radius >= canvas.height) {
     }
   }
 }
-
 function drawCannonballs() {
   for (const ball of cannonballs) {
     ctx.beginPath();
@@ -476,6 +522,9 @@ if (player.y < topThreshold) {
    const LAVA_TOLERANCE = 1;
   if (!gameOver && player.y + player.height >= lavaHeight - LAVA_TOLERANCE) {
     freezeGame = true;  // freeze immediately
+    sounds.music.pause();
+    sounds.gameOver.currentTime = 0;
+    sounds.gameOver.play();
 
     // After 1 second start fading out
     setTimeout(() => {
