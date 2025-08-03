@@ -81,14 +81,12 @@ const player = {
   y: 0,
   width: 20,
   height: 40,
-  color: "beige",
   vy: 0,
   vx: 0,
   grounded: false,
 
-  /* double‑jump */
   jumpCount: 0,
-  maxJumps : 2,
+  maxJumps: 2,
 
   normalSpeed: 5
 };
@@ -637,9 +635,14 @@ if (showCountdown && countdownValue > 0) {
 }
 }
 
-function drawPlayer() {
-  ctx.fillStyle = player.color;
-  ctx.fillRect(player.x, player.y, player.width, player.height);
+function drawPlayer(ctx) {
+  // Top half - beige square
+  ctx.fillStyle = "beige";
+  ctx.fillRect(player.x, player.y, player.width, player.height / 2);
+
+  // Bottom half - red square
+  ctx.fillStyle = "red";
+  ctx.fillRect(player.x, player.y + player.height / 2, player.width, player.height / 2);
 }
 
 function drawPlatforms() {
@@ -782,7 +785,7 @@ function animate() {
  drawBackdrop();
 drawBushes("behind");     // bushes the player stands IN FRONT OF
 drawPlatforms();
-drawPlayer();
+drawPlayer(ctx);;
 drawBushes("front");      // bushes that stand IN FRONT OF the player
 drawCannonballs();
 
