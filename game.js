@@ -640,8 +640,8 @@ function drawPlayer(ctx) {
   ctx.fillStyle = "beige";
   ctx.fillRect(player.x, player.y, player.width, player.height / 2);
 
-  // Bottom half - red square
-  ctx.fillStyle = "red";
+  // Bottom half - dark blue square
+  ctx.fillStyle = "#835e1bff"; // or use ""
   ctx.fillRect(player.x, player.y + player.height / 2, player.width, player.height / 2);
 }
 
