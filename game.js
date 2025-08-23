@@ -124,7 +124,7 @@ document.addEventListener("keydown", e => {
 
   if (!gameRunning || gameOver) return;
 
-  /* Jump & double‑jump */
+  /* Jump & double-jump */
   if (e.key === " ") {
    if (player.jumpCount < player.maxJumps) {
       sounds.jump.currentTime = 0;
@@ -132,70 +132,69 @@ document.addEventListener("keydown", e => {
       const BASE_JUMP = -13;                 // first jump height
       player.vy = player.jumpCount === 0     // second jump is half as strong
                   ? BASE_JUMP                // ➊ first jump
-                  : BASE_JUMP * 0.75;         // ➋ second jump (‑6.5)
+                  : BASE_JUMP * 0.75;         // ➋ second jump (-6.5)
       player.jumpCount++;
     }
   }
 
   /* Backspace for typing */
   if (e.key === "Backspace") {
-    if (currentTypingPlatform) {
+    // Optional: clear last wrong char from any platform
+    const target = platforms.find(p => !p.active && p.typedProgress.length > 0);
+    if (target) {
       sounds.typing.currentTime = 0;
       sounds.typing.play();
-      currentTypingPlatform.incorrectChar = null;
-      if (currentTypingPlatform.typedProgress.length > 0) {
-        currentTypingPlatform.typedProgress =
-          currentTypingPlatform.typedProgress.slice(0, -1);
-      }
+      target.incorrectChar = null;
+      target.typedProgress = target.typedProgress.slice(0, -1);
     }
     return;
   }
 
-  /* Letter typing */
+  /* Letter typing (updated for multi-platform) */
   if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
     sounds.typing.currentTime = 0;
     sounds.typing.play();
     const typedChar = e.key.toLowerCase();
 
-    /* find next untapped platform above player */
-    if (
-      !currentTypingPlatform ||
-      currentTypingPlatform.active ||
-      currentTypingPlatform.y > player.y
-    ) {
-      currentTypingPlatform = platforms
-        .filter(p => !p.active && p.y < player.y)
-        .sort((a, b) => b.y - a.y)[0];
-    }
+    let matchedPlatform = null;
 
-    if (currentTypingPlatform) {
-      const idx      = currentTypingPlatform.typedProgress.length;
-      const expected = currentTypingPlatform.word[idx].toLowerCase();
+    for (const plat of platforms) {
+      if (plat.active) continue;
+      if (plat.y > player.y + canvas.height) continue;
+
+      const idx = plat.typedProgress.length;
+      const expected = plat.word[idx]?.toLowerCase();
 
       if (typedChar === expected) {
-        currentTypingPlatform.typedProgress += typedChar;
-        currentTypingPlatform.incorrectChar  = null;
+        matchedPlatform = plat;
+        plat.typedProgress += typedChar;
+        plat.incorrectChar = null;
 
-        if (
-          currentTypingPlatform.typedProgress.length ===
-          currentTypingPlatform.word.trim().length
-        ) {
+        // Word complete
+        if (plat.typedProgress.length === plat.word.trim().length) {
           sounds.platformMade.currentTime = 0;
           sounds.platformMade.play();
-          currentTypingPlatform.active        = true;
-          currentTypingPlatform.typedProgress = "";
-          score += currentTypingPlatform.word.length;
-          lastCorrectPlatformY = currentTypingPlatform.y;
-          
-          // Track words typed for cannonball spawning
+          plat.active = true;
+          plat.typedProgress = "";
+          score += plat.word.length;
+          lastCorrectPlatformY = plat.y;
+
+          // Track cannonball spawning
           wordsTypedSinceLastCannonball++;
           if (wordsTypedSinceLastCannonball >= cannonballParams.appearsAfterNumberOfWords) {
             spawnCannonball();
             wordsTypedSinceLastCannonball = 0;
           }
         }
-      } else if (idx > 0) {
-        currentTypingPlatform.incorrectChar = typedChar;
+        break; // stop after first match this keypress
+      }
+    }
+
+    // If nothing matched, flag the first unfinished platform
+    if (!matchedPlatform) {
+      const target = platforms.find(p => !p.active);
+      if (target) {
+        target.incorrectChar = typedChar;
       }
     }
   }
@@ -225,6 +224,8 @@ function spawnCannonball() {
 }
 
 function updateCannonballs() {
+  const BASE_JUMP = -13; // same as your first jump strength
+
   for (let i = cannonballs.length - 1; i >= 0; i--) {
     const ball = cannonballs[i];
     
@@ -232,7 +233,7 @@ function updateCannonballs() {
     ball.x += ball.vx;
     ball.y += ball.vy;
     
-    // Bounce off edges - modified to use canvas edges relative to scroll
+    // Bounce off edges - relative to canvas edges
     if (ball.x - ball.radius <= 0 || ball.x + ball.radius >= canvas.width) {
       ball.vx = -ball.vx;
       ball.x = Math.max(ball.radius, Math.min(canvas.width - ball.radius, ball.x));
@@ -243,26 +244,49 @@ function updateCannonballs() {
       ball.y = Math.max(ball.radius, Math.min(canvas.height - ball.radius, ball.y));
     }
     
-    // Check collision with player
+    // Collision check with player
     if (!gameOver && !freezeGame) {
-      const distX = Math.abs(ball.x - (player.x + player.width / 2));
-      const distY = Math.abs(ball.y - (player.y + player.height / 2));
-      
-      if (distX < (player.width / 2 + ball.radius) && 
-          distY < (player.height / 2 + ball.radius)) {
-        // Game over on collision
-        freezeGame = true;
-        sounds.music.pause();
-        sounds.gameOver.currentTime = 0;
-        sounds.gameOver.play();
-        setTimeout(() => {
-          fadingOut = true;
-          fadeOpacity = 0;
-        }, 1000);
+      const px = player.x;
+      const py = player.y;
+      const pw = player.width;
+      const ph = player.height;
+
+      // Closest point on player to ball center
+      const closestX = Math.max(px, Math.min(ball.x, px + pw));
+      const closestY = Math.max(py, Math.min(ball.y, py + ph));
+
+      // Distance squared
+      const dx = ball.x - closestX;
+      const dy = ball.y - closestY;
+      const distSq = dx * dx + dy * dy;
+
+      if (distSq < ball.radius * ball.radius) {
+        const playerBottom = player.y + player.height;
+        const isFallingOnto = player.vy >= 0 && playerBottom <= ball.y;
+
+        if (isFallingOnto) {
+          // ✅ Bounce off top → instant jump, reset double jump
+          player.y = ball.y - ball.radius - player.height; 
+          player.vy = BASE_JUMP;   // bounce upward like a fresh jump
+          player.grounded = false; // airborne after bounce
+          player.jumpCount = 0;    // reset jumps so double jump is available
+        } else {
+          // ❌ Any other side collision → game over
+          freezeGame = true;
+          sounds.music.pause();
+          sounds.gameOver.currentTime = 0;
+          sounds.gameOver.play();
+          setTimeout(() => {
+            fadingOut = true;
+            fadeOpacity = 0;
+          }, 1000);
+        }
       }
     }
   }
 }
+
+
 function drawCannonballs() {
   for (const ball of cannonballs) {
     ctx.beginPath();
@@ -641,7 +665,7 @@ function drawPlayer(ctx) {
   ctx.fillRect(player.x, player.y, player.width, player.height / 2);
 
   // Bottom half - dark blue square
-  ctx.fillStyle = "#835e1bff"; // or use ""
+  ctx.fillStyle = "red"; // or use ""
   ctx.fillRect(player.x, player.y + player.height / 2, player.width, player.height / 2);
 }
 
