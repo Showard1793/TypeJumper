@@ -5,7 +5,8 @@ const soundParams = {
   cannonball: { volume: 0.6, speed: 1.0 },
   gameOver: { volume: 0.5, speed: 1.0 },
   platformMade: { volume: 0.1, speed: 1.0 },
-  typing: { volume: .99, speed: 1.0 } // Increased from original low volume
+  typing: { volume: 0.99, speed: 1.0 },
+  ballDeath: { volume: 0.6, speed: 1.0 }  // 🔥 added this
 };
 
 const sounds = {
@@ -14,7 +15,8 @@ const sounds = {
   cannonball: new Audio("/sounds/cannonball.mp3"),
   gameOver: new Audio("/sounds/gameOver.mp3"),
   platformMade: new Audio("/sounds/platformMade.mp3"),
-  typing: new Audio("/sounds/typing.mp3")
+  typing: new Audio("/sounds/typing.mp3"),
+  ballDeath: new Audio("/sounds/ballDeath.mp3") 
 };
 
 // Apply sound parameters
@@ -36,6 +38,7 @@ window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
 
 /* ───────── Game‑wide State ───────── */
+let paused = false;
 let gameStartTime       = 0;
 let groundCoveredByLava = false;
 const lavaGracePeriod   = 10000;     // 10 s
@@ -105,6 +108,19 @@ fetch("words.txt")
 
 /* ───────── Input Handling ───────── */
 const keysPressed = {};
+
+document.addEventListener("keydown", e => {
+  // Toggle pause on Escape
+  if (e.key === "Escape" && gameRunning && !gameOver) {
+    paused = !paused;
+    if (paused) {
+      sounds.music.pause();
+    } else {
+      sounds.music.play();
+      animate(); // restart animation loop if unpaused
+    }
+  }
+});
 
 document.addEventListener("keydown", e => {
   keysPressed[e.key] = true;
@@ -209,41 +225,77 @@ document.addEventListener("keyup", e => {
 function spawnCannonball() {
   sounds.cannonball.currentTime = 0;
   sounds.cannonball.play();
-  const angle = Math.random() * Math.PI / 4 + Math.PI / 8; // Random angle between 22.5° and 67.5°
-  const vx = Math.cos(angle) * cannonballParams.speed;
-  const vy = Math.sin(angle) * cannonballParams.speed;
-  
+
+  const radius = cannonballParams.size / 2;
+  const speed = cannonballParams.speed;
+
+  // Pick a random corner (0=top-left, 1=top-right, 2=bottom-left, 3=bottom-right)
+  const corner = Math.floor(Math.random() * 4);
+  let x, y, vx, vy;
+
+  if (corner === 0) { // top-left
+    x = radius;
+    y = radius;
+    vx = speed;
+    vy = speed;
+  } else if (corner === 1) { // top-right
+    x = canvas.width - radius;
+    y = radius;
+    vx = -speed;
+    vy = speed;
+  } else if (corner === 2) { // bottom-left
+    x = radius;
+    y = canvas.height - radius;
+    vx = speed;
+    vy = -speed;
+  } else { // bottom-right
+    x = canvas.width - radius;
+    y = canvas.height - radius;
+    vx = -speed;
+    vy = -speed;
+  }
+
   cannonballs.push({
-    x: 0,
-    y: 0,
-    radius: cannonballParams.size / 2,
-    vx: vx,
-    vy: vy,
-    color: cannonballParams.color
+    x, y, vx, vy,
+    radius,
+    color: cannonballParams.color,
+    falling: false // 🚀 new flag for gravity mode
   });
 }
 
 function updateCannonballs() {
-  const BASE_JUMP = -13; // same as your first jump strength
+  const BASE_JUMP = -13;
+  const GRAVITY = 0.6; // tweak for fall speed
 
   for (let i = cannonballs.length - 1; i >= 0; i--) {
     const ball = cannonballs[i];
-    
-    // Update position
-    ball.x += ball.vx;
-    ball.y += ball.vy;
-    
-    // Bounce off edges - relative to canvas edges
-    if (ball.x - ball.radius <= 0 || ball.x + ball.radius >= canvas.width) {
-      ball.vx = -ball.vx;
-      ball.x = Math.max(ball.radius, Math.min(canvas.width - ball.radius, ball.x));
+
+    if (ball.falling) {
+      // 🚀 Gravity mode
+      ball.vy += GRAVITY;
+      ball.y += ball.vy;
+
+      // Remove once it falls off-screen
+      if (ball.y - ball.radius > canvas.height) {
+        cannonballs.splice(i, 1);
+        continue;
+      }
+    } else {
+      // Normal bouncing mode
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      // Bounce off edges
+      if (ball.x - ball.radius <= 0 || ball.x + ball.radius >= canvas.width) {
+        ball.vx = -ball.vx;
+        ball.x = Math.max(ball.radius, Math.min(canvas.width - ball.radius, ball.x));
+      }
+      if (ball.y - ball.radius <= 0 || ball.y + ball.radius >= canvas.height) {
+        ball.vy = -ball.vy;
+        ball.y = Math.max(ball.radius, Math.min(canvas.height - ball.radius, ball.y));
+      }
     }
 
-    if (ball.y - ball.radius <= 0 || ball.y + ball.radius >= canvas.height) {
-      ball.vy = -ball.vy;
-      ball.y = Math.max(ball.radius, Math.min(canvas.height - ball.radius, ball.y));
-    }
-    
     // Collision check with player
     if (!gameOver && !freezeGame) {
       const px = player.x;
@@ -265,13 +317,22 @@ function updateCannonballs() {
         const isFallingOnto = player.vy >= 0 && playerBottom <= ball.y;
 
         if (isFallingOnto) {
-          // ✅ Bounce off top → instant jump, reset double jump
-          player.y = ball.y - ball.radius - player.height; 
-          player.vy = BASE_JUMP;   // bounce upward like a fresh jump
-          player.grounded = false; // airborne after bounce
-          player.jumpCount = 0;    // reset jumps so double jump is available
+          // ✅ Player bounces upward
+          player.y = ball.y - ball.radius - player.height;
+          player.vy = BASE_JUMP;
+          player.grounded = false;
+          player.jumpCount = 0;
+
+          // ✅ Cannonball switches to gravity mode
+          ball.falling = true;
+          ball.vx = 0;
+          ball.vy = 0; // reset before gravity kicks in
+
+          // 🔊 Play ball death sound
+          sounds.ballDeath.currentTime = 0;
+          sounds.ballDeath.play();
         } else {
-          // ❌ Any other side collision → game over
+          // ❌ Side collision → game over
           freezeGame = true;
           sounds.music.pause();
           sounds.gameOver.currentTime = 0;
@@ -285,7 +346,6 @@ function updateCannonballs() {
     }
   }
 }
-
 
 function drawCannonballs() {
   for (const ball of cannonballs) {
@@ -336,9 +396,10 @@ function showStartScreen() {
   //  ctx.fillText("GOAL: Type the words and outrun the lava!", canvas.width / 2, canvas.height / 2 + 200);
 
   ctx.font = "24px Arial";
-  ctx.fillText("GOAL: Type the Words and Outrun the Lava!", canvas.width / 2, canvas.height / 2 + 100);   
-  ctx.fillText("Arrow Keys: Move", canvas.width / 2, canvas.height / 2 + 165);
-  ctx.fillText("Space: Jump / Double-Jump", canvas.width / 2, canvas.height / 2 + 200);
+  ctx.fillText("GOAL: Type the Words and Outrun the Lava!", canvas.width / 2, canvas.height / 2 + 85);   
+  ctx.fillText("Pause: Escape ", canvas.width / 2, canvas.height / 2 + 140);
+  ctx.fillText("Move: Arrow Keys", canvas.width / 2, canvas.height / 2 + 175);
+  ctx.fillText("Jump / Double-Jump: Spacebar", canvas.width / 2, canvas.height / 2 + 210);
 
   // Button parameters
   const buttonText = "Press Enter to Start!";
@@ -799,19 +860,19 @@ function animate() {
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Only update game state if not frozen
-  if (!freezeGame) {
+  // Only update game state if not frozen or paused
+  if (!freezeGame && !paused) {
     updatePlayer();
     updateCannonballs();
   }
 
   // Draw game world
- drawBackdrop();
-drawBushes("behind");     // bushes the player stands IN FRONT OF
-drawPlatforms();
-drawPlayer(ctx);;
-drawBushes("front");      // bushes that stand IN FRONT OF the player
-drawCannonballs();
+  drawBackdrop();
+  drawBushes("behind");
+  drawPlatforms();
+  drawPlayer(ctx);
+  drawBushes("front");
+  drawCannonballs();
 
   // Draw lava
   ctx.fillStyle = "rgba(255,0,0,0.7)";
@@ -825,24 +886,27 @@ drawCannonballs();
 
   drawScore();
 
-  // ─── Fade-out overlay ───────────────────────
-  if (fadingOut) {
-    const FADE_FRAMES = 60 * 2; // 2 seconds at 60fps
-    fadeOpacity += 1 / FADE_FRAMES;
+  // Draw paused overlay
+  // Draw paused text
+if (paused) {
+  ctx.fillStyle = "gray";
+  ctx.font = "bold 80px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle"; // vertically center text
+  ctx.fillText("Paused", canvas.width / 2, canvas.height / 2);
+}
 
+  // Fade-out overlay
+  if (fadingOut) {
+    fadeOpacity += 0.02;
     ctx.fillStyle = `rgba(0, 0, 0, ${Math.min(fadeOpacity, 1)})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
     if (fadeOpacity >= 1) {
       fadingOut = false;
-      endGame(); // Draw Game Over screen
-      return;    // Stop here to avoid redrawing over it
+      endGame();
+      return;
     }
-
-    requestAnimationFrame(animate); // Keep fading
-    return;
   }
 
-  // Continue animation loop
-  requestAnimationFrame(animate);
+  if (!paused) requestAnimationFrame(animate);
 }
