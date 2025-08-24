@@ -38,6 +38,7 @@ window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
 
 /* ───────── Game‑wide State ───────── */
+let paused = false;
 let gameStartTime       = 0;
 let groundCoveredByLava = false;
 const lavaGracePeriod   = 10000;     // 10 s
@@ -107,6 +108,19 @@ fetch("words.txt")
 
 /* ───────── Input Handling ───────── */
 const keysPressed = {};
+
+document.addEventListener("keydown", e => {
+  // Toggle pause on Escape
+  if (e.key === "Escape" && gameRunning && !gameOver) {
+    paused = !paused;
+    if (paused) {
+      sounds.music.pause();
+    } else {
+      sounds.music.play();
+      animate(); // restart animation loop if unpaused
+    }
+  }
+});
 
 document.addEventListener("keydown", e => {
   keysPressed[e.key] = true;
@@ -845,19 +859,19 @@ function animate() {
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Only update game state if not frozen
-  if (!freezeGame) {
+  // Only update game state if not frozen or paused
+  if (!freezeGame && !paused) {
     updatePlayer();
     updateCannonballs();
   }
 
   // Draw game world
- drawBackdrop();
-drawBushes("behind");     // bushes the player stands IN FRONT OF
-drawPlatforms();
-drawPlayer(ctx);;
-drawBushes("front");      // bushes that stand IN FRONT OF the player
-drawCannonballs();
+  drawBackdrop();
+  drawBushes("behind");
+  drawPlatforms();
+  drawPlayer(ctx);
+  drawBushes("front");
+  drawCannonballs();
 
   // Draw lava
   ctx.fillStyle = "rgba(255,0,0,0.7)";
@@ -871,24 +885,27 @@ drawCannonballs();
 
   drawScore();
 
-  // ─── Fade-out overlay ───────────────────────
-  if (fadingOut) {
-    const FADE_FRAMES = 60 * 2; // 2 seconds at 60fps
-    fadeOpacity += 1 / FADE_FRAMES;
+  // Draw paused overlay
+  // Draw paused text
+if (paused) {
+  ctx.fillStyle = "gray";
+  ctx.font = "bold 80px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle"; // vertically center text
+  ctx.fillText("Paused", canvas.width / 2, canvas.height / 2);
+}
 
+  // Fade-out overlay
+  if (fadingOut) {
+    fadeOpacity += 0.02;
     ctx.fillStyle = `rgba(0, 0, 0, ${Math.min(fadeOpacity, 1)})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
     if (fadeOpacity >= 1) {
       fadingOut = false;
-      endGame(); // Draw Game Over screen
-      return;    // Stop here to avoid redrawing over it
+      endGame();
+      return;
     }
-
-    requestAnimationFrame(animate); // Keep fading
-    return;
   }
 
-  // Continue animation loop
-  requestAnimationFrame(animate);
+  if (!paused) requestAnimationFrame(animate);
 }
