@@ -396,9 +396,10 @@ function showStartScreen() {
   //  ctx.fillText("GOAL: Type the words and outrun the lava!", canvas.width / 2, canvas.height / 2 + 200);
 
   ctx.font = "24px Arial";
-  ctx.fillText("GOAL: Type the Words and Outrun the Lava!", canvas.width / 2, canvas.height / 2 + 100);   
-  ctx.fillText("Arrow Keys: Move", canvas.width / 2, canvas.height / 2 + 165);
-  ctx.fillText("Space: Jump / Double-Jump", canvas.width / 2, canvas.height / 2 + 200);
+  ctx.fillText("GOAL: Type the Words and Outrun the Lava!", canvas.width / 2, canvas.height / 2 + 85);   
+  ctx.fillText("Pause: Escape ", canvas.width / 2, canvas.height / 2 + 140);
+  ctx.fillText("Move: Arrow Keys", canvas.width / 2, canvas.height / 2 + 175);
+  ctx.fillText("Jump / Double-Jump: Spacebar", canvas.width / 2, canvas.height / 2 + 210);
 
   // Button parameters
   const buttonText = "Press Enter to Start!";
