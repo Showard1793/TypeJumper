@@ -72,7 +72,7 @@ let lastCorrectPlatformY  = 0;
 const cannonballParams = {
   size: 30,
   speed: 5,
-  appearsAfterNumberOfWords: 5,
+  appearsAfterNumberOfWords: 4,
   color: "black"
 };
 let cannonballs = [];
