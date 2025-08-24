@@ -5,7 +5,8 @@ const soundParams = {
   cannonball: { volume: 0.6, speed: 1.0 },
   gameOver: { volume: 0.5, speed: 1.0 },
   platformMade: { volume: 0.1, speed: 1.0 },
-  typing: { volume: .99, speed: 1.0 } // Increased from original low volume
+  typing: { volume: 0.99, speed: 1.0 },
+  ballDeath: { volume: 0.6, speed: 1.0 }  // 🔥 added this
 };
 
 const sounds = {
@@ -14,7 +15,8 @@ const sounds = {
   cannonball: new Audio("/sounds/cannonball.mp3"),
   gameOver: new Audio("/sounds/gameOver.mp3"),
   platformMade: new Audio("/sounds/platformMade.mp3"),
-  typing: new Audio("/sounds/typing.mp3")
+  typing: new Audio("/sounds/typing.mp3"),
+  ballDeath: new Audio("/sounds/ballDeath.mp3") 
 };
 
 // Apply sound parameters
@@ -206,7 +208,6 @@ document.addEventListener("keyup", e => {
 });
 
 /* ───────── Cannonball Functions ───────── */
-/* ───────── Cannonball Functions ───────── */
 function spawnCannonball() {
   sounds.cannonball.currentTime = 0;
   sounds.cannonball.play();
@@ -312,6 +313,10 @@ function updateCannonballs() {
           ball.falling = true;
           ball.vx = 0;
           ball.vy = 0; // reset before gravity kicks in
+
+          // 🔊 Play ball death sound
+          sounds.ballDeath.currentTime = 0;
+          sounds.ballDeath.play();
         } else {
           // ❌ Side collision → game over
           freezeGame = true;
