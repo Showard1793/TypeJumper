@@ -4,7 +4,7 @@ const soundParams = {
   jump: { volume: 0.1, speed: 1.0 },
   cannonball: { volume: 0.6, speed: 1.0 },
   gameOver: { volume: 0.5, speed: 1.0 },
-  platformMade: { volume: 0.1, speed: 1.0 },
+  platformMade: { volume: 0.08, speed: 1.0 },
   typing: { volume: 0.99, speed: 1.0 },
   ballDeath: { volume: 0.6, speed: 1.0 }  // 🔥 added this
 };
@@ -72,7 +72,7 @@ let lastCorrectPlatformY  = 0;
 const cannonballParams = {
   size: 30,
   speed: 5,
-  appearsAfterNumberOfWords: 4,
+  appearsAfterNumberOfWords: 5,
   color: "black"
 };
 let cannonballs = [];
