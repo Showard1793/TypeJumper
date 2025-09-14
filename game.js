@@ -4,7 +4,7 @@ const soundParams = {
   jump: { volume: 0.1, speed: 1.0 },
   cannonball: { volume: 0.6, speed: 1.0 },
   gameOver: { volume: 0.5, speed: 1.0 },
-  platformMade: { volume: 0.08, speed: 1.0 },
+  platformMade: { volume: 0.15, speed: 2.5 },
   typing: { volume: 0.99, speed: 1.0 },
   ballDeath: { volume: 0.6, speed: 1.0 }  // 🔥 added this
 };
@@ -264,7 +264,7 @@ function spawnCannonball() {
 }
 
 function updateCannonballs() {
-  const BASE_JUMP = -13;
+  const BASE_JUMP = -10;
   const GRAVITY = 0.6; // tweak for fall speed
 
   for (let i = cannonballs.length - 1; i >= 0; i--) {
